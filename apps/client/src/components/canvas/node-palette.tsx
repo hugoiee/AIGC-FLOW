@@ -1,10 +1,22 @@
 "use client";
 
-import { CircleDot, LogIn, LogOut, Redo2, Undo2, Upload } from "lucide-react";
+import { CircleDot, Hand, LogIn, LogOut, MousePointer2, Redo2, Undo2, Upload } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+/**
+ * 画布左键的两种模式，语义对齐 Figma / 即梦：
+ * select 拖空白是框选，move 拖空白是平移画布。
+ * 只存在内存里，刷新后回到默认的 select —— 它是主要工作模式。
+ */
+export const CANVAS_MODES = [
+  { mode: "select", label: "选择", icon: MousePointer2, key: "V", hint: "左键拖空白处框选节点" },
+  { mode: "move", label: "移动", icon: Hand, key: "H", hint: "左键拖动平移画布" },
+] as const;
+
+export type CanvasMode = (typeof CANVAS_MODES)[number]["mode"];
 
 /**
  * 可添加的节点种类。用的是 React Flow 内置的三种类型，
@@ -23,6 +35,8 @@ export type NodeKind = (typeof NODE_KINDS)[number]["type"];
 const ACCEPT = "image/*,video/*,audio/*";
 
 type NodePaletteProps = {
+  mode: CanvasMode;
+  onModeChange: (mode: CanvasMode) => void;
   onAdd: (kind: NodeKind) => void;
   onPickFiles: (files: File[]) => void;
   canUndo: boolean;
@@ -32,6 +46,8 @@ type NodePaletteProps = {
 };
 
 export function NodePalette({
+  mode,
+  onModeChange,
   onAdd,
   onPickFiles,
   canUndo,
@@ -43,6 +59,10 @@ export function NodePalette({
 
   return (
     <div className="flex items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-lg backdrop-blur-sm">
+      <ModeToggle mode={mode} onModeChange={onModeChange} />
+
+      <Separator orientation="vertical" className="!h-5 mx-1" />
+
       {NODE_KINDS.map(({ type, label, icon: Icon, hint }) => (
         <Tooltip key={type}>
           <TooltipTrigger asChild>
@@ -126,5 +146,46 @@ export function NodePalette({
         <TooltipContent side="top">重做 ⇧⌘Z</TooltipContent>
       </Tooltip>
     </div>
+  );
+}
+
+/**
+ * 单个按钮承载两种模式：显示当前模式的图标，点一下切到另一种。
+ * 刻意用 default（实心黑）而不是 ghost —— 它是模式开关，不是一次性动作，
+ * 和右边那排「按一下做件事」的按钮必须一眼看出区别。
+ */
+function ModeToggle({
+  mode,
+  onModeChange,
+}: {
+  mode: CanvasMode;
+  onModeChange: (mode: CanvasMode) => void;
+}) {
+  const current = CANVAS_MODES.find((item) => item.mode === mode) ?? CANVAS_MODES[0];
+  const next = CANVAS_MODES.find((item) => item.mode !== mode) ?? CANVAS_MODES[0];
+  const Icon = current.icon;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="default"
+          size="icon"
+          onClick={() => onModeChange(next.mode)}
+          aria-label={`当前为${current.label}模式，切换到${next.label}模式`}
+        >
+          <Icon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p className="font-medium">
+          {current.label}模式 · {current.key}
+        </p>
+        <p className="opacity-75">{current.hint}</p>
+        <p className="opacity-75">
+          点击或按 {next.key} 切到{next.label}模式
+        </p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

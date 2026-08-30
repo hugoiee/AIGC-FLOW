@@ -1,6 +1,7 @@
 import {
   type CanvasEdge,
   type CanvasNode,
+  GROUP_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type ProjectGraph,
@@ -12,6 +13,9 @@ import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
  * 存下来也没意义：刷新后 File 对象已经没了，既重试不了也拿不到 URL，
  * 只会留下一个永远"上传中"的死节点。
  */
+/** 尺寸要落盘的节点类型：这两种的尺寸是用户定的，不是内容撑出来的 */
+const SIZED_NODE_TYPES = new Set<string>([MEDIA_NODE_TYPE, GROUP_NODE_TYPE]);
+
 function isPersistable(node: Node): boolean {
   if (node.type !== MEDIA_NODE_TYPE) return true;
   return (node.data as unknown as MediaNodeData)?.status === "ready";
@@ -33,13 +37,17 @@ export function toPersistedGraph(nodes: Node[], edges: Edge[], viewport: Viewpor
         type: node.type,
         position: node.position,
         data: { label: String(node.data?.label ?? "未命名节点"), ...node.data },
-        // 只落媒体节点的尺寸。普通节点的 width/height 是 React Flow 量出来的，
+        // 只落媒体节点和编组的尺寸。普通节点的 width/height 是 React Flow 量出来的，
         // 存下来会让"内容自适应"变成"锁死在上次量到的值"
         // 锁比例拖拽会算出 632.888…/112.5 这种小数，落库前取整。
         // 放在这一处而不是 onResizeEnd：这是尺寸写出去的唯一出口，
         // 不依赖某个回调有没有被触发。
-        ...(node.type === MEDIA_NODE_TYPE && node.width && node.height
+        ...(SIZED_NODE_TYPES.has(node.type ?? "") && node.width && node.height
           ? { width: Math.round(node.width), height: Math.round(node.height) }
+          : {}),
+        // 父子关系。注意此时的 position 已经是相对父节点的坐标了
+        ...(node.parentId && keptIds.has(node.parentId)
+          ? { parentId: node.parentId, ...(node.extent === "parent" ? { extent: "parent" } : {}) }
           : {}),
       }),
     ),
@@ -66,14 +74,29 @@ export function toPersistedGraph(nodes: Node[], edges: Edge[], viewport: Viewpor
  * 这两个字段是纯展示的，不落盘。
  */
 export function fromPersistedGraph(graph: ProjectGraph): { nodes: Node[]; edges: Edge[] } {
+  // 媒体节点现在只剩右侧 source，没有入口。历史数据里指向它的连线在 UI 上
+  // 已经无处落脚，留着只会画成一根接在节点中心的怪线，加载时直接丢掉。
+  const mediaIds = new Set(
+    graph.nodes.filter((node) => node.type === MEDIA_NODE_TYPE).map((node) => node.id),
+  );
+
+  const nodeIds = new Set(graph.nodes.map((node) => node.id));
+
   return {
-    nodes: graph.nodes.map((node) => ({
+    // React Flow 要求父节点排在子节点前面，否则子节点挂不上去，直接报错。
+    // 落盘顺序不保证这一点（编组是后建的，会排在成员后面），这里统一重排一次。
+    nodes: sortParentsFirst(graph.nodes).map((node) => ({
       id: node.id,
       type: node.type,
       position: node.position,
       data: node.data,
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
+      // 父节点可能已经不在了（比如脏数据），这时候必须把 parentId 一起丢掉，
+      // 否则 React Flow 会因为找不到父节点抛错，整张画布打不开
+      ...(node.parentId && nodeIds.has(node.parentId)
+        ? { parentId: node.parentId, ...(node.extent === "parent" ? { extent: "parent" } : {}) }
+        : {}),
       ...(node.width && node.height
         ? {
             width: node.width,
@@ -83,15 +106,22 @@ export function fromPersistedGraph(graph: ProjectGraph): { nodes: Node[]; edges:
           }
         : {}),
     })),
-    edges: graph.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle ?? undefined,
-      targetHandle: edge.targetHandle ?? undefined,
-      type: edge.type,
-    })),
+    edges: graph.edges
+      .filter((edge) => !mediaIds.has(edge.target))
+      .map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? undefined,
+        targetHandle: edge.targetHandle ?? undefined,
+        type: edge.type,
+      })),
   };
+}
+
+/** 父节点排前、子节点排后。只有一层父子，不用做拓扑排序 */
+function sortParentsFirst(nodes: CanvasNode[]): CanvasNode[] {
+  return [...nodes.filter((node) => !node.parentId), ...nodes.filter((node) => node.parentId)];
 }
 
 /** 比较两张图是否等价，用于判断「有没有未保存的改动」 */

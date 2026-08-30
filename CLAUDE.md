@@ -4,6 +4,10 @@
 
 当前进度：首页（项目列表）、画布编辑器（`/projects/[id]`，React Flow）、
 媒体上传（拖拽或按钮，图/视频/音频）已完成，`/debug` 是链路自检页。
+画布操作：选择/移动双模式（V / H 切换）、框选、多选工具条
+（整理节点 / 创建编组 / 对齐 / 间距 / 批量下载）、编组与解组、双击改节点名。
+媒体节点只有右侧一个 source 端点，选中才显示。**编组暂不支持嵌套。**
+这块的完整决策记录和踩坑见 `docs/画布操作逻辑.md`。
 模型调用尚未开发，节点目前是纯展示的。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
@@ -96,11 +100,31 @@ export type AppType = typeof app;
   它同时会过滤掉未上传完成的媒体节点及其悬空连线。
 - 判断文件类型用 `mediaKindOf(mimeType, filename)`，**不要只看 MIME**：
   部分容器格式（.mp4 / .mkv / .m4a）浏览器会给 `application/octet-stream` 甚至空串。
+- **编组的子节点 position 是相对父节点的**，编组时减去组原点、解组时加回来，
+  漏了哪一头节点都会飞走。排布操作（对齐 / 间距 / 整理）的选区必须先过
+  `lib/group.ts` 的 `sameParentSelection()`，否则顶层节点和组内子节点混在一起
+  算包围盒会得到垃圾数字。另外 React Flow 要求**父节点排在数组的子节点前面**，
+  `fromPersistedGraph` 里统一重排过。
+- **React Flow 的类名带双下划线，写不了 Tailwind 的 arbitrary variant** ——
+  `[&_.react-flow__pane]` 里的 `_` 会被 Tailwind 当成空格，类名被拆开，规则根本
+  生成不出来。这类样式只能写进 `globals.css`，而且**不能包在 `@layer` 里**：
+  React Flow 的样式表是未分层的，按 CSS 级联规则未分层永远压过分层。
+  现有的 `[data-canvas-mode="move"]` 那几条就是这个原因。
+- 移动模式要「哪儿都能拖」，光设 `nodesDraggable={false}` 不够：节点本身要靠
+  `elementsSelectable={false}` 让 React Flow 把它设成 `pointer-events:none`，
+  多选时盖在选区上那层 `.react-flow__nodesselection-rect` 还得另外单独让开。
+- 注册了自定义组件的内置类型（比如 `group`）仍然会套 React Flow 的默认样式，
+  `.react-flow__node-group` 的白底 / 边框 / padding 要在 `globals.css` 里清掉。
+- 浏览器只放行一个页面的第一个自动下载，之后的会弹窗让用户确认。批量下载就是
+  逐个触发 + 让用户点一次「允许」，**不要为了绕过它去做服务端打包**。
 - 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
   内网 IP 不进前端 bundle、凭据只在服务端填一处）。`UPLOAD_MODE=local|proxy`
   就是这个模式的样板：没内网时同一个接口切成本地实现，前端一行不改。
 
 ## 下一步
 
-模型调用适配层尚未引入，节点没有参数配置和执行能力。
+- 嵌套编组：目前选区含编组或组内节点时按钮置灰，要支持得处理多层坐标变换、
+  递归解组、递归收集组内素材。
+- 模型调用适配层尚未引入，节点没有参数配置和执行能力。
+
 按 `coding_new_feat` 五步法逐个功能推进。

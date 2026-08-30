@@ -14,10 +14,17 @@ export const canvasNodeSchema = z.object({
   data: z.object({ label: z.string() }).catchall(z.unknown()),
   /**
    * 节点在画布上的显示尺寸。只有被手动调整过或有明确默认值的节点才有
-   * （媒体节点）；普通节点由内容自适应，不写这两个字段。
+   * （媒体节点、编组）；普通节点由内容自适应，不写这两个字段。
    */
   width: z.number().positive().max(20000).optional(),
   height: z.number().positive().max(20000).optional(),
+  /**
+   * 所属编组的节点 id。有它时 position 是**相对父节点**的坐标，不是画布绝对坐标 ——
+   * 这是 React Flow 的约定，读写两头都要记得换算。
+   */
+  parentId: z.string().min(1).optional(),
+  /** "parent" 表示拖动被限制在父节点框内。目前只有编组的子节点会带 */
+  extent: z.literal("parent").optional(),
 });
 
 export const canvasEdgeSchema = z.object({
@@ -45,6 +52,15 @@ export const projectGraphSchema = z.object({
 export type CanvasNode = z.infer<typeof canvasNodeSchema>;
 export type CanvasEdge = z.infer<typeof canvasEdgeSchema>;
 export type ProjectGraph = z.infer<typeof projectGraphSchema>;
+
+/** 编组在 React Flow 里的 node.type。用的是 React Flow 内置的 group 语义 */
+export const GROUP_NODE_TYPE = "group";
+
+/** 编组框比选区外扩这么多，四周留出能看见的边距 */
+export const GROUP_PADDING = 32;
+
+/** 编组标题栏的高度，算在编组框内，子节点从标题下面开始排 */
+export const GROUP_HEADER_HEIGHT = 28;
 
 /** 新项目的初始图，也是 DB 列的默认值 */
 export const EMPTY_GRAPH: ProjectGraph = {

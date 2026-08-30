@@ -2,14 +2,36 @@
 
 import { AUDIO_NODE_SIZE, fitMediaSize, type MediaNodeData } from "@aigc-flow/shared";
 import { Handle, type NodeProps, NodeResizer, Position, useReactFlow } from "@xyflow/react";
-import { CircleAlert, FileImage, FileVideo, Loader2, Music } from "lucide-react";
-import { type SyntheticEvent, useEffect, useState } from "react";
+import { CircleAlert, FileImage, FileVideo, Loader2, Music, Plus } from "lucide-react";
+import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { NodeName } from "./node-name";
 
 const KIND_ICON = { image: FileImage, video: FileVideo, audio: Music } as const;
 
 /** 选中态的强调色。刻意不用主题的 primary —— 那是近黑色，做不出选框的意思 */
 const ACCENT = "#3b82f6";
+
+/**
+ * 唯一的连接点：浮在节点右外侧的圆形「+」，样式对齐
+ * docs/Img/单右侧端点样式示意.png。
+ *
+ * right 为负让它整个挪到节点外面 —— 覆在画面上会挡住素材本身。
+ * 位置靠 React Flow 自带的 .react-flow__handle-right（translate + top:50%）居中，
+ * 这里只覆盖 right 和外观。
+ */
+const SOURCE_HANDLE_STYLE: CSSProperties = {
+  width: 20,
+  height: 20,
+  right: -28,
+  borderRadius: 9999,
+  border: "1px solid var(--border)",
+  backgroundColor: "var(--background)",
+  color: "var(--muted-foreground)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
 
 const HANDLE_STYLE = {
   width: 9,
@@ -62,7 +84,7 @@ export function MediaNode({ id, data, selected }: NodeProps) {
         keepAspectRatio={!isAudio && !isPlaceholder && !freeResize}
       />
 
-      {selected && <InfoBar media={media} icon={Icon} />}
+      {selected && <InfoBar nodeId={id} media={media} icon={Icon} />}
 
       <div
         className={cn(
@@ -72,30 +94,53 @@ export function MediaNode({ id, data, selected }: NodeProps) {
           (isAudio || isPlaceholder) && "rounded-md",
         )}
       >
-        <Handle type="target" position={Position.Left} />
         <MediaBody media={media} onNaturalSize={handleNaturalSize} />
-        <Handle type="source" position={Position.Right} />
       </div>
+
+      {/*
+        媒体节点是纯资源产出方，只往外连，所以没有左侧 target。
+        必须放在 overflow-hidden 的壳外面，否则浮到节点外侧的部分会被裁掉。
+        未选中时用 opacity+pointerEvents 藏起来而不是不渲染 ——
+        不渲染的话它上面已有的连线会被 React Flow 判成悬空直接丢掉。
+      */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{
+          ...SOURCE_HANDLE_STYLE,
+          opacity: selected ? 1 : 0,
+          pointerEvents: selected ? "auto" : "none",
+        }}
+      >
+        {/* 图标不能吃指针事件，否则从正中间按下去拖不出连线 */}
+        <Plus className="pointer-events-none size-3" />
+      </Handle>
     </>
   );
 }
 
-/** 选中时浮在节点上方外侧：左边图标 + 名称，右边原始像素尺寸 */
+/**
+ * 选中时浮在节点上方外侧：左边图标 + 名称，右边原始像素尺寸。
+ * 名称双击可改。整条是 pointer-events-none（不挡住底下的画布），
+ * 只有名称那一小块单独放行。
+ */
 function InfoBar({
+  nodeId,
   media,
   icon: Icon,
 }: {
+  nodeId: string;
   media: MediaNodeData;
   icon: (typeof KIND_ICON)[keyof typeof KIND_ICON];
 }) {
   return (
     <div
-      className="-top-6 pointer-events-none absolute inset-x-0 flex items-center justify-between gap-4 text-[#3b82f6] text-xs"
+      className="-top-6 pointer-events-none absolute inset-x-0 flex items-center justify-between gap-4 text-xs"
       style={{ color: ACCENT }}
     >
       <span className="flex min-w-0 items-center gap-1">
         <Icon className="size-3.5 shrink-0" />
-        <span className="truncate">{media.label}</span>
+        <NodeName nodeId={nodeId} label={media.label} />
       </span>
       {media.naturalWidth && media.naturalHeight && (
         <span className="shrink-0 tabular-nums">

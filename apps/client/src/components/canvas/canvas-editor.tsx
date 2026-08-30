@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  GROUP_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type Project,
@@ -24,14 +25,33 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { useTheme } from "next-themes";
-import { type DragEvent, useCallback, useRef } from "react";
+import { type DragEvent, useCallback, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { CanvasActionsProvider } from "@/hooks/use-canvas-actions";
 import { useGraphAutosave } from "@/hooks/use-graph-autosave";
 import { useCanvasShortcuts, useGraphHistory } from "@/hooks/use-graph-history";
 import { useMediaUpload } from "@/hooks/use-media-upload";
+import { downloadableMedia, downloadMedia } from "@/lib/download";
+import {
+  canGroup as canGroupNodes,
+  groupChildIds,
+  groupNodes,
+  sameParentSelection,
+  selectedGroupId,
+  ungroupNodes,
+} from "@/lib/group";
+import {
+  type AlignMode,
+  alignNodes,
+  arrangeNodes,
+  type SpacingMode,
+  spaceNodes,
+} from "@/lib/layout";
 import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
+import { GroupNode } from "./group-node";
 import { MediaNode } from "./media-node";
-import { type NodeKind, NodePalette } from "./node-palette";
+import { type CanvasMode, type NodeKind, NodePalette } from "./node-palette";
+import { SelectionToolbar } from "./selection-toolbar";
 import "@xyflow/react/dist/style.css";
 
 const KIND_LABELS: Record<NodeKind, string> = {
@@ -43,7 +63,7 @@ const KIND_LABELS: Record<NodeKind, string> = {
 const PASTE_OFFSET = 40;
 
 // 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
-const NODE_TYPES = { [MEDIA_NODE_TYPE]: MediaNode };
+const NODE_TYPES = { [MEDIA_NODE_TYPE]: MediaNode, [GROUP_NODE_TYPE]: GroupNode };
 
 type CanvasEditorProps = {
   project: Project;
@@ -62,6 +82,7 @@ export function CanvasEditor({
   initialGraph,
   onRename,
 }: CanvasEditorProps) {
+  const [mode, setMode] = useState<CanvasMode>("select");
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition, getViewport } = useReactFlow();
@@ -140,20 +161,82 @@ export function CanvasEditor({
     [screenToFlowPosition, setNodes, commitNow, nodes, edges],
   );
 
-  const handleRenameNode = useCallback(
-    (_event: React.MouseEvent, node: Node) => {
-      const input = window.prompt("节点名称", String(node.data?.label ?? ""));
-      if (input === null) return;
-      const label = input.trim();
-      if (!label) return;
-
-      const next = nodes.map((item) =>
-        item.id === node.id ? { ...item, data: { ...item.data, label } } : item,
+  /**
+   * 改名由节点内部的信息条发起（双击名称），经 context 传下去。
+   * 读 ref 而不是闭包里的 nodes/edges：这个回调会一直挂在 context value 上，
+   * 用闭包的话每次画布有任何变动都要重建 value，把所有节点白白重渲一遍。
+   */
+  const renameNode = useCallback(
+    (nodeId: string, label: string) => {
+      const next = nodesRef.current.map((item) =>
+        item.id === nodeId ? { ...item, data: { ...item.data, label } } : item,
       );
       setNodes(next);
-      commitNow(next, edges);
+      commitNow(next, edgesRef.current);
     },
-    [setNodes, commitNow, nodes, edges],
+    [setNodes, commitNow],
+  );
+
+  const canvasActions = useMemo(() => ({ renameNode }), [renameNode]);
+
+  const selectedIds = useMemo(
+    () => nodes.filter((node) => node.selected).map((node) => node.id),
+    [nodes],
+  );
+
+  /** 排布类操作统一走这里：算出新数组 → setNodes → 整体入历史栈，一次 ⌘Z 全退回 */
+  const applyLayout = useCallback(
+    (compute: (current: Node[]) => Node[]) => {
+      const next = compute(nodesRef.current);
+      if (next === nodesRef.current) return;
+      setNodes(next);
+      commitNow(next, edgesRef.current);
+    },
+    [setNodes, commitNow],
+  );
+
+  /**
+   * 排布真正该动的那批：剔掉父节点已被选中的子节点，并且只留同一父级下的。
+   * 子节点坐标是相对父节点的，和顶层节点混在一起算包围盒会得到垃圾数字。
+   */
+  const layoutIds = useMemo(() => sameParentSelection(nodes, selectedIds), [nodes, selectedIds]);
+
+  const handleArrange = useCallback(
+    () => applyLayout((current) => arrangeNodes(current, layoutIds)),
+    [applyLayout, layoutIds],
+  );
+
+  const handleAlign = useCallback(
+    (mode: AlignMode) => applyLayout((current) => alignNodes(current, layoutIds, mode)),
+    [applyLayout, layoutIds],
+  );
+
+  const groupId = useMemo(() => selectedGroupId(nodes, selectedIds), [nodes, selectedIds]);
+  const canGroup = useMemo(() => canGroupNodes(nodes, selectedIds), [nodes, selectedIds]);
+
+  const handleGroup = useCallback(
+    () => applyLayout((current) => groupNodes(current, selectedIds)),
+    [applyLayout, selectedIds],
+  );
+
+  const handleUngroup = useCallback(() => {
+    if (!groupId) return;
+    applyLayout((current) => ungroupNodes(current, groupId));
+  }, [applyLayout, groupId]);
+
+  /** 选中的是编组时，要下的是组里的素材 —— 编组本身没有文件 */
+  const downloadItems = useMemo(() => {
+    const ids = groupId ? groupChildIds(nodes, groupId) : selectedIds;
+    return downloadableMedia(nodes, ids);
+  }, [nodes, selectedIds, groupId]);
+
+  const handleDownload = useCallback(() => {
+    void downloadMedia(downloadItems);
+  }, [downloadItems]);
+
+  const handleSpace = useCallback(
+    (mode: SpacingMode) => applyLayout((current) => spaceNodes(current, layoutIds, mode)),
+    [applyLayout, layoutIds],
   );
 
   const handleCopy = useCallback(() => {
@@ -258,76 +341,108 @@ export function CanvasEditor({
     [screenToFlowPosition, startUpload],
   );
 
+  const isMove = mode === "move";
+
   useCanvasShortcuts({
     onUndo: () => applySnapshot(history.undo()),
     onRedo: () => applySnapshot(history.redo()),
     onCopy: handleCopy,
     onPaste: handlePaste,
+    onSelectMode: () => setMode("select"),
+    onMoveMode: () => setMode("move"),
   });
 
   return (
     <TooltipProvider delayDuration={200}>
-      {/* 画布铺满整个视口，所有控件都以浮层叠在上面，最大化可用画布面积 */}
-      {/* role=application：这是个有自己快捷键的编辑器，要让屏幕阅读器把按键放行给页面 */}
-      <div
-        ref={wrapperRef}
-        className="h-dvh w-full"
-        role="application"
-        aria-label="节点画布，可将图片、视频、音频文件拖入此处上传"
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={handleConnect}
-          onNodeDoubleClick={handleRenameNode}
-          // 拖动过程中会连发几十次 position change，只在拖完才入栈，
-          // 否则按一次 Cmd+Z 只会把节点挪回一个像素
-          onNodeDragStop={() => commitNow(nodes, edges)}
-          onNodesDelete={() => commitNow(nodes, edges)}
-          onEdgesDelete={() => commitNow(nodes, edges)}
-          nodeTypes={NODE_TYPES}
-          colorMode={resolvedTheme === "dark" ? "dark" : "light"}
-          defaultViewport={initialViewport}
-          minZoom={0.2}
-          maxZoom={2}
-          deleteKeyCode={["Backspace", "Delete"]}
-          multiSelectionKeyCode={["Meta", "Shift"]}
+      <CanvasActionsProvider value={canvasActions}>
+        {/* 画布铺满整个视口，所有控件都以浮层叠在上面，最大化可用画布面积 */}
+        {/* role=application：这是个有自己快捷键的编辑器，要让屏幕阅读器把按键放行给页面 */}
+        <div
+          ref={wrapperRef}
+          className="h-dvh w-full"
+          // 移动模式的光标和选区覆盖层样式挂在 globals.css，按这个属性生效
+          data-canvas-mode={mode}
+          role="application"
+          aria-label="节点画布，可将图片、视频、音频文件拖入此处上传"
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
         >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={handleConnect}
+            // 拖动过程中会连发几十次 position change，只在拖完才入栈，
+            // 否则按一次 Cmd+Z 只会把节点挪回一个像素
+            onNodeDragStop={() => commitNow(nodes, edges)}
+            onNodesDelete={() => commitNow(nodes, edges)}
+            onEdgesDelete={() => commitNow(nodes, edges)}
+            nodeTypes={NODE_TYPES}
+            colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+            defaultViewport={initialViewport}
+            minZoom={0.2}
+            maxZoom={2}
+            deleteKeyCode={["Backspace", "Delete"]}
+            multiSelectionKeyCode={["Meta", "Shift"]}
+            // 选择模式：左键框选，平移让给中键 / 右键，节点可拖
+            // 移动模式：左键平移，节点不可拖（拖节点也是平移），语义对齐 Figma 的抓手
+            panOnDrag={isMove ? true : [1, 2]}
+            selectionOnDrag={!isMove}
+            nodesDraggable={!isMove}
+            // 移动模式下必须连 selectable 一起关掉：只关 draggable 的话，
+            // 节点本身和多选时那层 nodesselection-rect 仍然吃指针事件，
+            // 从节点上起手拖动画布会纹丝不动。关掉后 React Flow 会自己把它们
+            // 设成 pointer-events:none，抓手才真的「哪儿都能拖」
+            elementsSelectable={!isMove}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
 
-          <Panel position="top-left">
-            <CanvasInfoGroup
-              project={project}
-              nodeCount={nodes.length}
-              edgeCount={edges.length}
-              saveStatus={status}
-              onRename={onRename}
+            <SelectionToolbar
+              selectedIds={selectedIds}
+              groupId={groupId}
+              canGroup={canGroup}
+              onGroup={handleGroup}
+              onUngroup={handleUngroup}
+              onArrange={handleArrange}
+              onAlign={handleAlign}
+              onSpace={handleSpace}
+              onDownload={handleDownload}
+              downloadCount={downloadItems.length}
             />
-          </Panel>
 
-          <Panel position="top-right">
-            <CanvasActionGroup />
-          </Panel>
+            <Panel position="top-left">
+              <CanvasInfoGroup
+                project={project}
+                nodeCount={nodes.length}
+                edgeCount={edges.length}
+                saveStatus={status}
+                onRename={onRename}
+              />
+            </Panel>
 
-          <Panel position="bottom-center">
-            <NodePalette
-              onAdd={handleAddNode}
-              onPickFiles={handlePickFiles}
-              canUndo={history.canUndo}
-              canRedo={history.canRedo}
-              onUndo={() => applySnapshot(history.undo())}
-              onRedo={() => applySnapshot(history.redo())}
-            />
-          </Panel>
+            <Panel position="top-right">
+              <CanvasActionGroup />
+            </Panel>
 
-          <Controls />
-          <MiniMap pannable zoomable />
-        </ReactFlow>
-      </div>
+            <Panel position="bottom-center">
+              <NodePalette
+                mode={mode}
+                onModeChange={setMode}
+                onAdd={handleAddNode}
+                onPickFiles={handlePickFiles}
+                canUndo={history.canUndo}
+                canRedo={history.canRedo}
+                onUndo={() => applySnapshot(history.undo())}
+                onRedo={() => applySnapshot(history.redo())}
+              />
+            </Panel>
+
+            <Controls />
+            <MiniMap pannable zoomable />
+          </ReactFlow>
+        </div>
+      </CanvasActionsProvider>
     </TooltipProvider>
   );
 }

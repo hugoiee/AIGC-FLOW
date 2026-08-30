@@ -83,6 +83,8 @@ export function useCanvasShortcuts(handlers: {
   onRedo: () => void;
   onCopy: () => void;
   onPaste: () => void;
+  onSelectMode: () => void;
+  onMoveMode: () => void;
 }) {
   const ref = useRef(handlers);
   ref.current = handlers;
@@ -94,10 +96,18 @@ export function useCanvasShortcuts(handlers: {
         return;
       }
 
-      const mod = event.metaKey || event.ctrlKey;
-      if (!mod) return;
-
       const key = event.key.toLowerCase();
+      const mod = event.metaKey || event.ctrlKey;
+
+      // 无修饰键的单字母：模式切换。必须排在 mod 分支前面，
+      // 但也必须自己判掉 mod —— 否则 ⌘V 会被当成「切到选择模式」而不是粘贴
+      if (!mod && !event.altKey) {
+        if (key === "v") ref.current.onSelectMode();
+        else if (key === "h") ref.current.onMoveMode();
+        return;
+      }
+
+      if (!mod) return;
       if (key === "z") {
         event.preventDefault();
         if (event.shiftKey) ref.current.onRedo();
