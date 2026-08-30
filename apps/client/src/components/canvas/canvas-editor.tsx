@@ -18,6 +18,7 @@ import {
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
+import { useTheme } from "next-themes";
 import { useCallback, useRef } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useGraphAutosave } from "@/hooks/use-graph-autosave";
@@ -54,6 +55,9 @@ export function CanvasEditor({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition, getViewport } = useReactFlow();
+  // React Flow 的节点 / 控制条 / 小地图有自己一套 CSS 变量，不吃我们的 .dark，
+  // 必须显式把主题传给它的 colorMode，否则暗色下节点是白底白字，完全看不见
+  const { resolvedTheme } = useTheme();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] }>({ nodes: [], edges: [] });
 
@@ -199,6 +203,7 @@ export function CanvasEditor({
           onNodeDragStop={() => commitNow(nodes, edges)}
           onNodesDelete={() => commitNow(nodes, edges)}
           onEdgesDelete={() => commitNow(nodes, edges)}
+          colorMode={resolvedTheme === "dark" ? "dark" : "light"}
           defaultViewport={initialViewport}
           minZoom={0.2}
           maxZoom={2}

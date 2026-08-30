@@ -5,6 +5,7 @@ import { ChevronLeft, Settings } from "lucide-react";
 import Link from "next/link";
 import { ProjectName } from "@/components/canvas/project-name";
 import { SaveIndicator } from "@/components/canvas/save-indicator";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -64,6 +65,8 @@ export function CanvasInfoGroup({
 export function CanvasActionGroup() {
   return (
     <div className={GROUP}>
+      <ThemeToggle />
+
       <Tooltip>
         <TooltipTrigger asChild>
           {/* disabled 的按钮不派发鼠标事件，tooltip 收不到 hover，
