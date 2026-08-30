@@ -10,6 +10,7 @@ import {
   type Edge,
   MiniMap,
   type Node,
+  Panel,
   Position,
   ReactFlow,
   useEdgesState,
@@ -18,9 +19,10 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { useCallback, useRef } from "react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useGraphAutosave } from "@/hooks/use-graph-autosave";
 import { useCanvasShortcuts, useGraphHistory } from "@/hooks/use-graph-history";
-import { CanvasToolbar } from "./canvas-toolbar";
+import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
 import { type NodeKind, NodePalette } from "./node-palette";
 import "@xyflow/react/dist/style.css";
 
@@ -38,6 +40,7 @@ type CanvasEditorProps = {
   initialEdges: Edge[];
   initialViewport: Viewport;
   initialGraph: ProjectGraph;
+  onRename: (name: string) => Promise<void>;
 };
 
 export function CanvasEditor({
@@ -46,6 +49,7 @@ export function CanvasEditor({
   initialEdges,
   initialViewport,
   initialGraph,
+  onRename,
 }: CanvasEditorProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -180,46 +184,57 @@ export function CanvasEditor({
   });
 
   return (
-    <div className="flex h-dvh flex-col">
-      <CanvasToolbar
-        project={project}
-        nodeCount={nodes.length}
-        edgeCount={edges.length}
-        saveStatus={status}
-        canUndo={history.canUndo}
-        canRedo={history.canRedo}
-        onUndo={() => applySnapshot(history.undo())}
-        onRedo={() => applySnapshot(history.redo())}
-      />
+    <TooltipProvider delayDuration={200}>
+      {/* 画布铺满整个视口，所有控件都以浮层叠在上面，最大化可用画布面积 */}
+      <div ref={wrapperRef} className="h-dvh w-full">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={handleConnect}
+          onNodeDoubleClick={handleRenameNode}
+          // 拖动过程中会连发几十次 position change，只在拖完才入栈，
+          // 否则按一次 Cmd+Z 只会把节点挪回一个像素
+          onNodeDragStop={() => commitNow(nodes, edges)}
+          onNodesDelete={() => commitNow(nodes, edges)}
+          onEdgesDelete={() => commitNow(nodes, edges)}
+          defaultViewport={initialViewport}
+          minZoom={0.2}
+          maxZoom={2}
+          deleteKeyCode={["Backspace", "Delete"]}
+          multiSelectionKeyCode={["Meta", "Shift"]}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
 
-      <div className="flex min-h-0 flex-1">
-        <NodePalette onAdd={handleAddNode} />
+          <Panel position="top-left">
+            <CanvasInfoGroup
+              project={project}
+              nodeCount={nodes.length}
+              edgeCount={edges.length}
+              saveStatus={status}
+              onRename={onRename}
+            />
+          </Panel>
 
-        <div ref={wrapperRef} className="min-w-0 flex-1">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={handleConnect}
-            onNodeDoubleClick={handleRenameNode}
-            // 拖动过程中会连发几十次 position change，只在拖完才入栈，
-            // 否则按一次 Cmd+Z 只会把节点挪回一个像素
-            onNodeDragStop={() => commitNow(nodes, edges)}
-            onNodesDelete={() => commitNow(nodes, edges)}
-            onEdgesDelete={() => commitNow(nodes, edges)}
-            defaultViewport={initialViewport}
-            minZoom={0.2}
-            maxZoom={2}
-            deleteKeyCode={["Backspace", "Delete"]}
-            multiSelectionKeyCode={["Meta", "Shift"]}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-            <Controls />
-            <MiniMap pannable zoomable />
-          </ReactFlow>
-        </div>
+          <Panel position="top-right">
+            <CanvasActionGroup />
+          </Panel>
+
+          <Panel position="bottom-center">
+            <NodePalette
+              onAdd={handleAddNode}
+              canUndo={history.canUndo}
+              canRedo={history.canRedo}
+              onUndo={() => applySnapshot(history.undo())}
+              onRedo={() => applySnapshot(history.redo())}
+            />
+          </Panel>
+
+          <Controls />
+          <MiniMap pannable zoomable />
+        </ReactFlow>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }

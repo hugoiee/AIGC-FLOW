@@ -1,7 +1,9 @@
 "use client";
 
-import { CircleDot, LogIn, LogOut } from "lucide-react";
+import { CircleDot, LogIn, LogOut, Redo2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
  * 可添加的节点种类。用的是 React Flow 内置的三种类型，
@@ -18,35 +20,65 @@ export type NodeKind = (typeof NODE_KINDS)[number]["type"];
 
 type NodePaletteProps = {
   onAdd: (kind: NodeKind) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 };
 
-export function NodePalette({ onAdd }: NodePaletteProps) {
+export function NodePalette({ onAdd, canUndo, canRedo, onUndo, onRedo }: NodePaletteProps) {
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-1 border-r bg-background p-3">
-      <p className="px-2 pb-2 font-medium text-muted-foreground text-xs">添加节点</p>
+    <div className="flex items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-lg backdrop-blur-sm">
       {NODE_KINDS.map(({ type, label, icon: Icon, hint }) => (
-        <Button
-          key={type}
-          variant="ghost"
-          className="h-auto justify-start gap-3 px-2 py-2 text-left"
-          onClick={() => onAdd(type)}
-          title={hint}
-        >
-          <Icon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="flex flex-col items-start">
-            <span className="text-sm">{label}</span>
-            <span className="font-normal text-muted-foreground text-xs">{hint}</span>
-          </span>
-        </Button>
+        <Tooltip key={type}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onAdd(type)}
+              aria-label={`添加${label}节点`}
+            >
+              <Icon />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="font-medium">添加{label}节点</p>
+            <p className="opacity-75">{hint}</p>
+          </TooltipContent>
+        </Tooltip>
       ))}
 
-      <div className="mt-auto space-y-1 px-2 pt-4 text-muted-foreground text-xs leading-relaxed">
-        <p>双击节点可改名</p>
-        <p>选中后按 Delete 删除</p>
-        <p>拖动节点右侧圆点连线</p>
-        <p>Cmd+Z / Cmd+Shift+Z 撤销重做</p>
-        <p>Cmd+C / Cmd+V 复制粘贴</p>
-      </div>
-    </aside>
+      <Separator orientation="vertical" className="!h-5 mx-1" />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onUndo}
+            disabled={!canUndo}
+            aria-label="撤销"
+          >
+            <Undo2 />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">撤销 ⌘Z</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRedo}
+            disabled={!canRedo}
+            aria-label="重做"
+          >
+            <Redo2 />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">重做 ⇧⌘Z</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }

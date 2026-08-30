@@ -19,5 +19,11 @@ export const createProjectSchema = z.object({
   name: z.string().trim().min(1, "项目名称不能为空").max(100, "项目名称最多 100 个字符"),
 });
 
+/** 改名。字段和创建时同规则，独立成一个 schema 是为了以后能加别的可改字段 */
+export const updateProjectSchema = z.object({
+  name: z.string().trim().min(1, "项目名称不能为空").max(100, "项目名称最多 100 个字符"),
+});
+
 export type Project = z.infer<typeof projectSchema>;
+export type UpdateProjectInput = z.input<typeof updateProjectSchema>;
 export type CreateProjectInput = z.input<typeof createProjectSchema>;

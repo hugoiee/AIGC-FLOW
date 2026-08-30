@@ -1,4 +1,9 @@
-import { createProjectSchema, EMPTY_GRAPH, projectGraphSchema } from "@aigc-flow/shared";
+import {
+  createProjectSchema,
+  EMPTY_GRAPH,
+  projectGraphSchema,
+  updateProjectSchema,
+} from "@aigc-flow/shared";
 import { zValidator } from "@hono/zod-validator";
 import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
@@ -47,6 +52,25 @@ export const projectsRoute = new Hono()
     if (!row) return c.json({ message: "项目不存在" }, 404);
     return c.json(row);
   })
+  .patch(
+    "/:id",
+    zValidator("param", idParamSchema),
+    zValidator("json", updateProjectSchema),
+    (c) => {
+      const { id } = c.req.valid("param");
+      const { name } = c.req.valid("json");
+
+      const row = db
+        .update(projects)
+        .set({ name, updatedAt: nowIso() })
+        .where(eq(projects.id, id))
+        .returning(projectColumns)
+        .get();
+      if (!row) return c.json({ message: "项目不存在" }, 404);
+
+      return c.json(row);
+    },
+  )
   .delete("/:id", zValidator("param", idParamSchema), (c) => {
     const { id } = c.req.valid("param");
     const row = db.delete(projects).where(eq(projects.id, id)).returning({ id: projects.id }).get();

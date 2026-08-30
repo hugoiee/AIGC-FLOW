@@ -4,7 +4,7 @@ import type { Project, ProjectGraph } from "@aigc-flow/shared";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { fromPersistedGraph } from "@/lib/graph";
@@ -49,6 +49,19 @@ export function CanvasPage({ projectId }: { projectId: number }) {
     };
   }, [projectId]);
 
+  const handleRename = useCallback(
+    async (name: string) => {
+      const res = await api.api.projects[":id"].$patch({
+        param: { id: String(projectId) },
+        json: { name },
+      });
+      if (!res.ok) throw new Error("重命名失败");
+      const updated = await res.json();
+      setState((prev) => (prev.status === "ready" ? { ...prev, project: updated } : prev));
+    },
+    [projectId],
+  );
+
   if (state.status === "loading") {
     return (
       <div className="flex h-dvh items-center justify-center gap-2 text-muted-foreground">
@@ -80,6 +93,7 @@ export function CanvasPage({ projectId }: { projectId: number }) {
         initialEdges={initial.edges}
         initialViewport={state.graph.viewport}
         initialGraph={state.graph}
+        onRename={handleRename}
       />
     </ReactFlowProvider>
   );
