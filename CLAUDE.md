@@ -2,8 +2,9 @@
 
 画布节点工作流，用于调用各种模型进行影视资产创作。
 
-当前进度：首页（项目列表）与画布编辑器（`/projects/[id]`，React Flow）已完成，
-`/debug` 是链路自检页。模型调用尚未开发，节点目前是纯展示的。
+当前进度：首页（项目列表）、画布编辑器（`/projects/[id]`，React Flow）、
+媒体上传（拖拽或按钮，图/视频/音频）已完成，`/debug` 是链路自检页。
+模型调用尚未开发，节点目前是纯展示的。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
 
@@ -92,6 +93,12 @@ export type AppType = typeof app;
   写在里面会静默执行两遍 —— 这个坑在首页的删除和画布的撤销上各踩过一次。
 - 画布图数据落盘前必须过 `lib/graph.ts` 的 `toPersistedGraph()` 剥掉 React Flow 的
   瞬时状态（`selected` / `dragging` / `measured`），否则点选节点都会触发保存。
+  它同时会过滤掉未上传完成的媒体节点及其悬空连线。
+- 判断文件类型用 `mediaKindOf(mimeType, filename)`，**不要只看 MIME**：
+  部分容器格式（.mp4 / .mkv / .m4a）浏览器会给 `application/octet-stream` 甚至空串。
+- 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
+  内网 IP 不进前端 bundle、凭据只在服务端填一处）。`UPLOAD_MODE=local|proxy`
+  就是这个模式的样板：没内网时同一个接口切成本地实现，前端一行不改。
 
 ## 下一步
 

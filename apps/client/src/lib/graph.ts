@@ -1,14 +1,33 @@
-import type { CanvasEdge, CanvasNode, ProjectGraph } from "@aigc-flow/shared";
+import {
+  type CanvasEdge,
+  type CanvasNode,
+  MEDIA_NODE_TYPE,
+  type MediaNodeData,
+  type ProjectGraph,
+} from "@aigc-flow/shared";
 import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
+
+/**
+ * 上传中 / 上传失败的媒体节点不落盘。
+ * 存下来也没意义：刷新后 File 对象已经没了，既重试不了也拿不到 URL，
+ * 只会留下一个永远"上传中"的死节点。
+ */
+function isPersistable(node: Node): boolean {
+  if (node.type !== MEDIA_NODE_TYPE) return true;
+  return (node.data as unknown as MediaNodeData)?.status === "ready";
+}
 
 /**
  * React Flow 会往节点上挂 selected / dragging / measured 等瞬时状态。
  * 落盘前必须剥掉：否则刷新后会带着上次的选中态回来，payload 也白白变大，
- * 而且后端的 zod schema 是严格的，多余字段会被剥离但没必要走这一遭。
+ * 而且单纯点选一个节点就会被判定为「有改动」触发保存。
  */
 export function toPersistedGraph(nodes: Node[], edges: Edge[], viewport: Viewport): ProjectGraph {
+  const kept = nodes.filter(isPersistable);
+  const keptIds = new Set(kept.map((node) => node.id));
+
   return {
-    nodes: nodes.map(
+    nodes: kept.map(
       (node): CanvasNode => ({
         id: node.id,
         type: node.type,
@@ -16,16 +35,19 @@ export function toPersistedGraph(nodes: Node[], edges: Edge[], viewport: Viewpor
         data: { label: String(node.data?.label ?? "未命名节点"), ...node.data },
       }),
     ),
-    edges: edges.map(
-      (edge): CanvasEdge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle,
-        targetHandle: edge.targetHandle,
-        type: edge.type,
-      }),
-    ),
+    // 丢掉指向已被过滤节点的悬空连线，否则加载时会连到不存在的节点
+    edges: edges
+      .filter((edge) => keptIds.has(edge.source) && keptIds.has(edge.target))
+      .map(
+        (edge): CanvasEdge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+          type: edge.type,
+        }),
+      ),
     viewport,
   };
 }

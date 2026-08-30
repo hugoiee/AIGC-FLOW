@@ -1,6 +1,11 @@
 "use client";
 
-import type { Project, ProjectGraph } from "@aigc-flow/shared";
+import {
+  MEDIA_NODE_TYPE,
+  type MediaNodeData,
+  type Project,
+  type ProjectGraph,
+} from "@aigc-flow/shared";
 import {
   addEdge,
   Background,
@@ -19,11 +24,13 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { useTheme } from "next-themes";
-import { useCallback, useRef } from "react";
+import { type DragEvent, useCallback, useRef } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useGraphAutosave } from "@/hooks/use-graph-autosave";
 import { useCanvasShortcuts, useGraphHistory } from "@/hooks/use-graph-history";
+import { useMediaUpload } from "@/hooks/use-media-upload";
 import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
+import { MediaNode } from "./media-node";
 import { type NodeKind, NodePalette } from "./node-palette";
 import "@xyflow/react/dist/style.css";
 
@@ -34,6 +41,9 @@ const KIND_LABELS: Record<NodeKind, string> = {
 };
 
 const PASTE_OFFSET = 40;
+
+// 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
+const NODE_TYPES = { [MEDIA_NODE_TYPE]: MediaNode };
 
 type CanvasEditorProps = {
   project: Project;
@@ -60,6 +70,11 @@ export function CanvasEditor({
   const { resolvedTheme } = useTheme();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] }>({ nodes: [], edges: [] });
+  // 上传是异步的，回调里不能用闭包捕获的 nodes/edges（可能已经过期好几轮）
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
 
   const history = useGraphHistory({ nodes: initialNodes, edges: initialEdges });
   const { status } = useGraphAutosave({
@@ -180,6 +195,69 @@ export function CanvasEditor({
     commitNow(nextNodes, nextEdges);
   }, [nodes, edges, setNodes, setEdges, commitNow]);
 
+  /** 上传占位节点入场：一次性放上去并入历史栈 */
+  const handleUploadNodesCreated = useCallback(
+    (created: Node[]) => {
+      const next = [...nodesRef.current, ...created];
+      setNodes(next);
+      commitNow(next, edgesRef.current);
+    },
+    [setNodes, commitNow],
+  );
+
+  /**
+   * 上传完成 / 失败时回填。
+   * 用 setNodes 的函数式写法读最新值：上传异步，回调触发时闭包里的 nodes 早过期了。
+   * 这里不入历史栈 —— 回填是上传的结果，不是用户的一次操作，
+   * 否则按 Cmd+Z 会把节点退回"上传中"这种没意义的状态。
+   */
+  const handleUploadNodeSettled = useCallback(
+    (nodeId: string, patch: Partial<MediaNodeData>) => {
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === nodeId ? { ...node, data: { ...node.data, ...patch } } : node,
+        ),
+      );
+    },
+    [setNodes],
+  );
+
+  const startUpload = useMediaUpload({
+    onNodesCreated: handleUploadNodesCreated,
+    onNodeSettled: handleUploadNodeSettled,
+  });
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) return;
+
+      event.preventDefault();
+      const origin = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      startUpload(files, { x: origin.x - 112, y: origin.y - 80 });
+    },
+    [screenToFlowPosition, startUpload],
+  );
+
+  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    // 不 preventDefault 的话浏览器会把文件当成导航，整个页面被图片替换掉
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  /** 底部工具条的上传按钮：文件落在当前视口中心 */
+  const handlePickFiles = useCallback(
+    (files: File[]) => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      const center = rect
+        ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
+        : { x: 0, y: 0 };
+      startUpload(files, { x: center.x - 112, y: center.y - 80 });
+    },
+    [screenToFlowPosition, startUpload],
+  );
+
   useCanvasShortcuts({
     onUndo: () => applySnapshot(history.undo()),
     onRedo: () => applySnapshot(history.redo()),
@@ -190,7 +268,15 @@ export function CanvasEditor({
   return (
     <TooltipProvider delayDuration={200}>
       {/* 画布铺满整个视口，所有控件都以浮层叠在上面，最大化可用画布面积 */}
-      <div ref={wrapperRef} className="h-dvh w-full">
+      {/* role=application：这是个有自己快捷键的编辑器，要让屏幕阅读器把按键放行给页面 */}
+      <div
+        ref={wrapperRef}
+        className="h-dvh w-full"
+        role="application"
+        aria-label="节点画布，可将图片、视频、音频文件拖入此处上传"
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -203,6 +289,7 @@ export function CanvasEditor({
           onNodeDragStop={() => commitNow(nodes, edges)}
           onNodesDelete={() => commitNow(nodes, edges)}
           onEdgesDelete={() => commitNow(nodes, edges)}
+          nodeTypes={NODE_TYPES}
           colorMode={resolvedTheme === "dark" ? "dark" : "light"}
           defaultViewport={initialViewport}
           minZoom={0.2}
@@ -229,6 +316,7 @@ export function CanvasEditor({
           <Panel position="bottom-center">
             <NodePalette
               onAdd={handleAddNode}
+              onPickFiles={handlePickFiles}
               canUndo={history.canUndo}
               canRedo={history.canRedo}
               onUndo={() => applySnapshot(history.undo())}

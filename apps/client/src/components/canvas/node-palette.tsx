@@ -1,6 +1,7 @@
 "use client";
 
-import { CircleDot, LogIn, LogOut, Redo2, Undo2 } from "lucide-react";
+import { CircleDot, LogIn, LogOut, Redo2, Undo2, Upload } from "lucide-react";
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -18,15 +19,28 @@ export const NODE_KINDS = [
 
 export type NodeKind = (typeof NODE_KINDS)[number]["type"];
 
+/** 文件选择框接受的类型，和服务端 mediaKindOf 的判断保持一致 */
+const ACCEPT = "image/*,video/*,audio/*";
+
 type NodePaletteProps = {
   onAdd: (kind: NodeKind) => void;
+  onPickFiles: (files: File[]) => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
 };
 
-export function NodePalette({ onAdd, canUndo, canRedo, onUndo, onRedo }: NodePaletteProps) {
+export function NodePalette({
+  onAdd,
+  onPickFiles,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+}: NodePaletteProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
   return (
     <div className="flex items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-lg backdrop-blur-sm">
       {NODE_KINDS.map(({ type, label, icon: Icon, hint }) => (
@@ -47,6 +61,38 @@ export function NodePalette({ onAdd, canUndo, canRedo, onUndo, onRedo }: NodePal
           </TooltipContent>
         </Tooltip>
       ))}
+
+      <Separator orientation="vertical" className="!h-5 mx-1" />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => inputRef.current?.click()}
+            aria-label="上传媒体"
+          >
+            <Upload />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">上传媒体</p>
+          <p className="opacity-75">图片 / 视频 / 音频，可多选；也能直接拖进画布</p>
+        </TooltipContent>
+      </Tooltip>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPT}
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          // 清空 value，否则连续选同一个文件不会再触发 change
+          event.target.value = "";
+          if (files.length > 0) onPickFiles(files);
+        }}
+      />
 
       <Separator orientation="vertical" className="!h-5 mx-1" />
 
