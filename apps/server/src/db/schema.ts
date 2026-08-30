@@ -1,3 +1,4 @@
+import { EMPTY_GRAPH_JSON } from "@aigc-flow/shared";
 import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
@@ -14,6 +15,8 @@ export const projects = sqliteTable("projects", {
   name: text("name").notNull(),
   /** 封面图路径，当前版本恒为 null，前端按名称生成占位图 */
   coverImage: text("cover_image"),
+  /** 整张画布图（nodes / edges / viewport）的 JSON，读写都是整体覆盖 */
+  graph: text("graph").notNull().default(EMPTY_GRAPH_JSON),
   createdAt: text("created_at").notNull().default(isoNow),
   updatedAt: text("updated_at").notNull().default(isoNow),
 });

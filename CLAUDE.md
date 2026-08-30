@@ -2,9 +2,10 @@
 
 画布节点工作流，用于调用各种模型进行影视资产创作。
 
-当前进度：首页（项目列表，含空状态 / 新建 / 删除）已完成，
-`/debug` 是链路自检页。画布编辑器（`/projects/:id`）与模型调用尚未开发。
+当前进度：首页（项目列表）与画布编辑器（`/projects/[id]`，React Flow）已完成，
+`/debug` 是链路自检页。模型调用尚未开发，节点目前是纯展示的。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
+整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
 
 ## 常用命令
 
@@ -86,8 +87,13 @@ export type AppType = typeof app;
   **不要用 `CURRENT_TIMESTAMP`** —— 它没有时区标记，前端 `new Date()` 会按本地时区解析而偏移。
 - 参与 SSR 的工具函数必须是纯函数（如 `project-cover.tsx` 的 `hashName`），
   不要用 `Math.random()` / `Date.now()`，否则 hydration 不匹配。
+- **`setState` 的 updater 必须是纯函数**，任何副作用（写历史栈、发请求、读快照）
+  都放到 updater 外面先算好再 set。React StrictMode 下 updater 会被调用两次，
+  写在里面会静默执行两遍 —— 这个坑在首页的删除和画布的撤销上各踩过一次。
+- 画布图数据落盘前必须过 `lib/graph.ts` 的 `toPersistedGraph()` 剥掉 React Flow 的
+  瞬时状态（`selected` / `dragging` / `measured`），否则点选节点都会触发保存。
 
 ## 下一步
 
-画布功能（React Flow / @xyflow/react）、模型调用适配层尚未引入，
+模型调用适配层尚未引入，节点没有参数配置和执行能力。
 按 `coding_new_feat` 五步法逐个功能推进。

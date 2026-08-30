@@ -8,6 +8,13 @@
       "when": 1788061857979,
       "tag": "0000_windy_typhoid_mary",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788063757811,
+      "tag": "0001_lumpy_doorman",
+      "breakpoints": true
     }
   ]
 }
