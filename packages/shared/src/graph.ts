@@ -12,6 +12,12 @@ export const canvasNodeSchema = z.object({
   type: z.string().optional(),
   position: z.object({ x: z.number(), y: z.number() }),
   data: z.object({ label: z.string() }).catchall(z.unknown()),
+  /**
+   * 节点在画布上的显示尺寸。只有被手动调整过或有明确默认值的节点才有
+   * （媒体节点）；普通节点由内容自适应，不写这两个字段。
+   */
+  width: z.number().positive().max(20000).optional(),
+  height: z.number().positive().max(20000).optional(),
 });
 
 export const canvasEdgeSchema = z.object({

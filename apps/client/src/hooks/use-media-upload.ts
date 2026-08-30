@@ -1,25 +1,43 @@
 "use client";
 
-import { MEDIA_NODE_TYPE, type MediaNodeData, mediaKindOf } from "@aigc-flow/shared";
+import {
+  AUDIO_NODE_SIZE,
+  MEDIA_DEFAULT_MAX_EDGE,
+  MEDIA_NODE_TYPE,
+  MEDIA_PLACEHOLDER_SIZE,
+  type MediaNodeData,
+  mediaKindOf,
+} from "@aigc-flow/shared";
 import type { Node, XYPosition } from "@xyflow/react";
 import { useCallback } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-/** 多个文件同时落点时错开排布，避免叠成一摞 */
-const GRID_GAP_X = 240;
-const GRID_GAP_Y = 190;
+/**
+ * 多个文件同时落点时错开排布，避免叠成一摞。
+ * 间距要能容下按 MEDIA_DEFAULT_MAX_EDGE(480) 落位后的最大节点，
+ * 否则几张大图一起拖进来会互相遮挡。
+ */
+const GRID_GAP_X = MEDIA_DEFAULT_MAX_EDGE + 40;
+const GRID_GAP_Y = MEDIA_DEFAULT_MAX_EDGE + 60;
 const PER_ROW = 3;
 
 export function buildPendingNode(file: File, position: XYPosition): Node {
   const kind = mediaKindOf(file.type, file.name) ?? "image";
   const data: MediaNodeData = { label: file.name, kind, status: "uploading" };
 
+  // 占位框先给个尺寸，否则节点没高度、里面的 size-full 会塌成一条线。
+  // 媒体加载出来后 MediaNode 会按原始比例重新落位。
+  const size = kind === "audio" ? AUDIO_NODE_SIZE : MEDIA_PLACEHOLDER_SIZE;
+
   return {
     id: crypto.randomUUID(),
     type: MEDIA_NODE_TYPE,
     position,
     data: data as unknown as Record<string, unknown>,
+    width: size.width,
+    height: size.height,
+    style: { width: size.width, height: size.height },
   };
 }
 

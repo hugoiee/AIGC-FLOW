@@ -33,6 +33,14 @@ export function toPersistedGraph(nodes: Node[], edges: Edge[], viewport: Viewpor
         type: node.type,
         position: node.position,
         data: { label: String(node.data?.label ?? "未命名节点"), ...node.data },
+        // 只落媒体节点的尺寸。普通节点的 width/height 是 React Flow 量出来的，
+        // 存下来会让"内容自适应"变成"锁死在上次量到的值"
+        // 锁比例拖拽会算出 632.888…/112.5 这种小数，落库前取整。
+        // 放在这一处而不是 onResizeEnd：这是尺寸写出去的唯一出口，
+        // 不依赖某个回调有没有被触发。
+        ...(node.type === MEDIA_NODE_TYPE && node.width && node.height
+          ? { width: Math.round(node.width), height: Math.round(node.height) }
+          : {}),
       }),
     ),
     // 丢掉指向已被过滤节点的悬空连线，否则加载时会连到不存在的节点
@@ -66,6 +74,14 @@ export function fromPersistedGraph(graph: ProjectGraph): { nodes: Node[]; edges:
       data: node.data,
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
+      ...(node.width && node.height
+        ? {
+            width: node.width,
+            height: node.height,
+            // style 也要给：React Flow 靠它渲染尺寸，只给 width/height 会被重新量一遍
+            style: { width: node.width, height: node.height },
+          }
+        : {}),
     })),
     edges: graph.edges.map((edge) => ({
       id: edge.id,

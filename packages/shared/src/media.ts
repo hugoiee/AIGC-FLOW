@@ -98,6 +98,39 @@ export const mediaNodeDataSchema = z.object({
   url: z.string().optional(),
   /** status 为 error 时的原因 */
   error: z.string().optional(),
+  /** 媒体的原始像素尺寸，加载完成后由前端探测写入，只用于信息条展示 */
+  naturalWidth: z.number().positive().optional(),
+  naturalHeight: z.number().positive().optional(),
 });
 
 export type MediaNodeData = z.infer<typeof mediaNodeDataSchema>;
+
+/** 媒体节点首次落到画布上时，最长边不超过这个值 */
+export const MEDIA_DEFAULT_MAX_EDGE = 480;
+
+/** 尺寸未知时的占位框（上传中 / 失败 / 探测不到原始尺寸） */
+export const MEDIA_PLACEHOLDER_SIZE = { width: 320, height: 180 } as const;
+
+/** 音频没有画面，固定高度，只允许调宽 */
+export const AUDIO_NODE_SIZE = { width: 320, height: 96 } as const;
+
+/**
+ * 按原始比例把媒体缩进画布。
+ * 比 MEDIA_DEFAULT_MAX_EDGE 小的图保持原尺寸不放大 ——
+ * 放大只会让它糊掉，而且用户本来就能手动拉大。
+ */
+export function fitMediaSize(
+  naturalWidth: number,
+  naturalHeight: number,
+  maxEdge: number = MEDIA_DEFAULT_MAX_EDGE,
+): { width: number; height: number } {
+  if (naturalWidth <= 0 || naturalHeight <= 0) {
+    return { ...MEDIA_PLACEHOLDER_SIZE };
+  }
+
+  const scale = Math.min(1, maxEdge / Math.max(naturalWidth, naturalHeight));
+  return {
+    width: Math.max(1, Math.round(naturalWidth * scale)),
+    height: Math.max(1, Math.round(naturalHeight * scale)),
+  };
+}
