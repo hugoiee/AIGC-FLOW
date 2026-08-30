@@ -1,4 +1,5 @@
-import { WorkflowConsole } from "@/components/workflow-console";
+import Link from "next/link";
+import { ProjectList } from "@/components/project-list";
 
 export default function HomePage() {
   return (
@@ -9,26 +10,21 @@ export default function HomePage() {
           <span className="font-semibold tracking-tight">AIGC-FLOW</span>
         </div>
         <nav className="flex items-center gap-6 text-muted-foreground text-sm">
-          <span className="text-foreground">工作流</span>
-          <span>画布（待开发）</span>
-          <span>模型（待开发）</span>
+          <span className="text-foreground">项目</span>
+          <Link href="/debug" className="hover:text-foreground">
+            自检
+          </Link>
         </nav>
       </header>
 
-      <section className="border-b py-10">
-        <h1 className="font-semibold text-3xl tracking-tight sm:text-4xl">画布节点工作流</h1>
-        <p className="mt-3 max-w-xl text-muted-foreground">
-          调用各种模型进行影视资产创作。当前是骨架版本，先跑通 Next.js → Hono → SQLite 全链路。
-        </p>
+      <section className="py-8">
+        <h1 className="font-semibold text-3xl tracking-tight">我的项目</h1>
+        <p className="mt-2 text-muted-foreground">用节点画布串联模型，生产影视资产。</p>
       </section>
 
-      <main className="flex-1 py-8">
-        <WorkflowConsole />
+      <main className="flex-1 pb-16">
+        <ProjectList />
       </main>
-
-      <footer className="border-t py-6 text-muted-foreground text-sm">
-        pnpm workspaces · Next.js 16 · Hono · Drizzle + SQLite · shadcn/ui
-      </footer>
     </div>
   );
 }

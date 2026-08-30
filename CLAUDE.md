@@ -1,7 +1,10 @@
 # AIGC-FLOW
 
-画布节点工作流，用于调用各种模型进行影视资产创作。当前为骨架版本：已跑通
-`Next.js client → Hono server → SQLite` 全链路，画布/节点/模型调用尚未开发。
+画布节点工作流，用于调用各种模型进行影视资产创作。
+
+当前进度：首页（项目列表，含空状态 / 新建 / 删除）已完成，
+`/debug` 是链路自检页。画布编辑器（`/projects/:id`）与模型调用尚未开发。
+核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 
 ## 常用命令
 
@@ -59,13 +62,13 @@ packages/
 前端不手写 fetch，统一走 `src/lib/api.ts` 的 Hono RPC：
 
 ```ts
-const res = await api.api.workflows.$post({ json: { name, description } });
+const res = await api.api.projects.$post({ json: { name } });
 ```
 
 因此 `apps/server/src/app.ts` 里的路由**必须保持链式调用**：
 
 ```ts
-const app = new Hono().use(...).route("/api/health", healthRoute).route("/api/workflows", workflowsRoute);
+const app = new Hono().use(...).route("/api/health", healthRoute).route("/api/projects", projectsRoute);
 export type AppType = typeof app;
 ```
 
@@ -73,12 +76,16 @@ export type AppType = typeof app;
 
 ## 编码规范
 
-- 文件名 kebab-case（`workflow-console.tsx`），组件名 PascalCase。
+- 文件名 kebab-case（`project-card.tsx`），组件名 PascalCase。
 - Next.js 默认写 Server Component；需要状态/事件时才加 `"use client"`，
   并把 client 组件下沉到叶子节点。
 - 接口出入参的校验 schema 写在 `packages/shared`，前后端共用同一份。
 - 数据库字段改动流程：改 `schema.ts` → `pnpm db:generate` → `pnpm db:migrate`，
   不要手写 SQL 或直接改 `drizzle/` 里的文件。
+- 新增时间字段一律用 `schema.ts` 里的 `isoNow`（带 Z 的 ISO 8601 UTC），
+  **不要用 `CURRENT_TIMESTAMP`** —— 它没有时区标记，前端 `new Date()` 会按本地时区解析而偏移。
+- 参与 SSR 的工具函数必须是纯函数（如 `project-cover.tsx` 的 `hashName`），
+  不要用 `Math.random()` / `Date.now()`，否则 hydration 不匹配。
 
 ## 下一步
 

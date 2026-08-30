@@ -31,9 +31,16 @@ server.on("error", (err: NodeJS.ErrnoException) => {
   throw err;
 });
 
-// tsx watch / Ctrl-C 时干净地放掉端口，避免下次启动再撞 EADDRINUSE
+// tsx watch / Ctrl-C 时干净地放掉端口，避免下次启动再撞 EADDRINUSE。
+// 必须先掐断 keep-alive 连接：只调 close() 的话它会一直等浏览器的长连接排空，
+// 而 tsx watch 是「SIGTERM 老进程 + 立刻拉新进程」，老进程攥着端口不放，
+// 新进程就会撞 EADDRINUSE，热重载直接坏掉。
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
+    // serve() 的返回类型是 http.Server | Http2Server 的联合，后者没有这个方法
+    if ("closeAllConnections" in server) server.closeAllConnections();
     server.close(() => process.exit(0));
+    // 兜底：1 秒还没关干净就强退，不能让端口一直被占着
+    setTimeout(() => process.exit(0), 1000).unref();
   });
 }

@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { corsOrigins } from "./env";
 import { healthRoute } from "./routes/health";
-import { workflowsRoute } from "./routes/workflows";
+import { projectsRoute } from "./routes/projects";
 
 /**
  * 路由必须链式挂载，Hono RPC 的类型推导依赖这条链。
@@ -13,7 +13,7 @@ const app = new Hono()
   .use("*", logger())
   .use("/api/*", cors({ origin: corsOrigins, credentials: true }))
   .route("/api/health", healthRoute)
-  .route("/api/workflows", workflowsRoute);
+  .route("/api/projects", projectsRoute);
 
 app.onError((err, c) => {
   console.error("[server error]", err);

@@ -1,11 +1,11 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "770c5db3-7cad-4c48-a6f2-a5b7f8d548a5",
+  "id": "5c4fcbe0-7958-4b05-88f8-e48d7be8009b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "workflows": {
-      "name": "workflows",
+    "projects": {
+      "name": "projects",
       "columns": {
         "id": {
           "name": "id",
@@ -21,13 +21,12 @@
           "notNull": true,
           "autoincrement": false
         },
-        "description": {
-          "name": "description",
+        "cover_image": {
+          "name": "cover_image",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",
@@ -35,7 +34,7 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
+          "default": "(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))"
         },
         "updated_at": {
           "name": "updated_at",
@@ -43,7 +42,7 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
+          "default": "(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))"
         }
       },
       "indexes": {},

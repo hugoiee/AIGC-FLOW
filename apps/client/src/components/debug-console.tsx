@@ -1,6 +1,6 @@
 "use client";
 
-import type { Workflow } from "@aigc-flow/shared";
+import type { Project } from "@aigc-flow/shared";
 import { Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -8,14 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 
 type Health = { status: string; db: string; uptime: number };
 
-export function WorkflowConsole() {
+export function DebugConsole() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -26,11 +25,11 @@ export function WorkflowConsole() {
     try {
       const [healthRes, listRes] = await Promise.all([
         api.api.health.$get(),
-        api.api.workflows.$get(),
+        api.api.projects.$get(),
       ]);
       if (!healthRes.ok || !listRes.ok) throw new Error("接口返回异常");
       setHealth(await healthRes.json());
-      setWorkflows(await listRes.json());
+      setProjects(await listRes.json());
     } catch {
       setError("连不上后端，确认 apps/server 已在 http://localhost:3001 启动");
     } finally {
@@ -51,8 +50,8 @@ export function WorkflowConsole() {
 
     setSubmitting(true);
     try {
-      const res = await api.api.workflows.$post({
-        json: { name, description: String(data.get("description") ?? "") },
+      const res = await api.api.projects.$post({
+        json: { name },
       });
       if (!res.ok) throw new Error("创建失败");
       form.reset();
@@ -65,8 +64,8 @@ export function WorkflowConsole() {
   }
 
   async function handleDelete(id: number) {
-    const res = await api.api.workflows[":id"].$delete({ param: { id: String(id) } });
-    if (res.ok) setWorkflows((prev) => prev.filter((w) => w.id !== id));
+    const res = await api.api.projects[":id"].$delete({ param: { id: String(id) } });
+    if (res.ok) setProjects((prev) => prev.filter((w) => w.id !== id));
   }
 
   const online = health?.status === "ok" && health?.db === "ok";
@@ -98,23 +97,12 @@ export function WorkflowConsole() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">新建工作流</CardTitle>
+            <CardTitle className="text-base">新建项目</CardTitle>
             <CardDescription>写入 SQLite，验证读写与 zod 校验</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-3">
-              <Input
-                name="name"
-                placeholder="工作流名称，如「预告片分镜流」"
-                maxLength={100}
-                required
-              />
-              <Textarea
-                name="description"
-                placeholder="一句话说明这条流水线做什么"
-                maxLength={500}
-                rows={3}
-              />
+              <Input name="name" placeholder="项目名称" maxLength={100} required />
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting ? <Loader2 className="animate-spin" /> : <Plus />}
                 创建
@@ -126,9 +114,9 @@ export function WorkflowConsole() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">工作流列表</CardTitle>
+          <CardTitle className="text-base">项目列表</CardTitle>
           <CardDescription>
-            {loading ? "加载中…" : `共 ${workflows.length} 条，来自 SQLite`}
+            {loading ? "加载中…" : `共 ${projects.length} 条，来自 SQLite`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -137,28 +125,25 @@ export function WorkflowConsole() {
               {error}
             </p>
           )}
-          {!loading && workflows.length === 0 && !error && (
+          {!loading && projects.length === 0 && !error && (
             <p className="py-10 text-center text-muted-foreground text-sm">
-              还没有工作流，先在左侧创建一条
+              还没有项目，先在左侧创建一条
             </p>
           )}
-          {workflows.map((workflow) => (
+          {projects.map((project) => (
             <div
-              key={workflow.id}
+              key={project.id}
               className="flex items-start justify-between gap-4 rounded-lg border p-4"
             >
               <div className="min-w-0">
-                <p className="truncate font-medium">{workflow.name}</p>
-                <p className="truncate text-muted-foreground text-sm">
-                  {workflow.description || "（无描述）"}
-                </p>
-                <p className="mt-1 text-muted-foreground text-xs">创建于 {workflow.createdAt}</p>
+                <p className="truncate font-medium">{project.name}</p>
+                <p className="mt-1 text-muted-foreground text-xs">创建于 {project.createdAt}</p>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`删除 ${workflow.name}`}
-                onClick={() => handleDelete(workflow.id)}
+                aria-label={`删除 ${project.name}`}
+                onClick={() => handleDelete(project.id)}
               >
                 <Trash2 />
               </Button>

@@ -17,6 +17,7 @@ build/
 
 # database (SQLite 单文件 + WAL)
 *.db
+*.sqlite
 *.db-shm
 *.db-wal
 apps/server/data/
