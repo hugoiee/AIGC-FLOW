@@ -1,6 +1,6 @@
 "use client";
 
-import { BaseEdge, type EdgeProps, getBezierPath } from "@xyflow/react";
+import { BaseEdge, type EdgeProps, getBezierPath, useStore } from "@xyflow/react";
 import { motion } from "motion/react";
 
 /**
@@ -10,6 +10,8 @@ import { motion } from "motion/react";
  */
 export function AnimatedEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -19,6 +21,11 @@ export function AnimatedEdge({
   style,
   markerEnd,
 }: EdgeProps) {
+  // 任一端节点被选中时这条线高亮，一眼看出选中节点连着谁
+  const isHighlighted = useStore((state) =>
+    Boolean(state.nodeLookup.get(source)?.selected || state.nodeLookup.get(target)?.selected),
+  );
+
   const [path] = getBezierPath({
     sourceX,
     sourceY,
@@ -30,7 +37,12 @@ export function AnimatedEdge({
 
   return (
     <>
-      <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} />
+      <BaseEdge
+        id={id}
+        path={path}
+        style={isHighlighted ? { ...style, stroke: "#3b82f6", strokeWidth: 1.8 } : style}
+        markerEnd={markerEnd}
+      />
       {/* 盖在默认线上方的描边动画层，播完后透明化，不拦截指针事件 */}
       <motion.path
         d={path}

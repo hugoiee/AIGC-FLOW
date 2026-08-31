@@ -104,9 +104,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
-  const { activeNodeId, dropTargetId, neighborIds } = useCanvasActions();
-  // 有直接连线的节点被选中时，本节点显示虚线高亮
-  const isNeighbor = !selected && neighborIds.has(id);
+  const { activeNodeId, dropTargetId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
@@ -196,7 +194,6 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             className={cn(
               "w-full overflow-hidden rounded-md",
               selected && "outline outline-1 outline-[#3b82f6]",
-              isNeighbor && "shadow-[0_0_0_2px_#3b82f6,0_0_18px_4px_rgba(59,130,246,0.5)]",
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
