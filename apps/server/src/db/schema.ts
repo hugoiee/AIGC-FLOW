@@ -23,3 +23,12 @@ export const projects = sqliteTable("projects", {
 
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProjectRow = typeof projects.$inferInsert;
+
+/** 全局设置，KV 结构。目前只有一个 key：upload_base_url（内网上传服务根地址） */
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at").notNull().default(isoNow),
+});
+
+export type SettingRow = typeof settings.$inferSelect;

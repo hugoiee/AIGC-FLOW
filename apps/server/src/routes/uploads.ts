@@ -7,7 +7,6 @@ import {
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { env } from "../env";
 import { storeFile } from "../uploads/storage";
 
 const downloadQuerySchema = z.object({
@@ -16,12 +15,16 @@ const downloadQuerySchema = z.object({
 });
 
 /**
- * 只放行本服务自己产出的素材地址，防止这个接口被当成任意 URL 的代理。
- * 两个前缀分别对应 local（PUBLIC_BASE_URL/uploads）和 proxy（内网服务）两种模式。
+ * 只放行内网上传/生产服务产出的素材地址（都在百度云 bcebos.com 的桶上），
+ * 防止这个接口被当成任意 URL 的代理。
  */
 function isAllowedSource(url: string): boolean {
-  const allowed = [`${env.PUBLIC_BASE_URL}/uploads/`, `${env.UPLOAD_BASE_URL}/`];
-  return allowed.some((prefix) => url.startsWith(prefix));
+  try {
+    const { protocol, hostname } = new URL(url);
+    return protocol === "https:" && (hostname === "bcebos.com" || hostname.endsWith(".bcebos.com"));
+  } catch {
+    return false;
+  }
 }
 
 function formatSize(bytes: number): string {
@@ -46,14 +49,13 @@ export const uploadsRoute = new Hono()
 
     // 逐个处理并各自捕获：一个文件失败不该让整批都失败
     const results = await Promise.all(
-      files.map(async (file): Promise<UploadedFile & { error?: string }> => {
+      files.map(async (file): Promise<UploadedFile> => {
         const kind = mediaKindOf(file.type, file.name);
         if (!kind) {
           return {
             filename: file.name,
             url: "",
             status: "error",
-            duplicate: false,
             error: `不支持的文件类型：${file.type || "未知"}`,
           };
         }
@@ -62,7 +64,6 @@ export const uploadsRoute = new Hono()
             filename: file.name,
             url: "",
             status: "error",
-            duplicate: false,
             error: `文件超过 ${formatSize(MAX_FILE_SIZE[kind])} 上限`,
           };
         }
@@ -75,7 +76,6 @@ export const uploadsRoute = new Hono()
             filename: file.name,
             url: "",
             status: "error",
-            duplicate: false,
             error: error instanceof Error ? error.message : "上传失败",
           };
         }
@@ -85,10 +85,9 @@ export const uploadsRoute = new Hono()
     return c.json({ files: results, success: results.every((item) => item.status !== "error") });
   })
   /**
-   * 批量下载用的转发。浏览器不直连素材地址：
-   * proxy 模式下那是内网 IP（跨域 + 不该进前端 bundle），local 模式下静态目录
-   * 也没挂 CORS。统一从这里取回再带 Content-Disposition 吐出去，
-   * 前端一个 <a> 就能触发下载，两种模式一行都不用改。
+   * 批量下载用的转发。浏览器不直连 bcebos 素材地址（跨域 + 没有
+   * Content-Disposition，触发不了存盘）。统一从这里取回再带
+   * Content-Disposition 吐出去，前端一个 <a> 就能触发下载。
    */
   .get("/download", zValidator("query", downloadQuerySchema), async (c) => {
     const { url, filename } = c.req.valid("query");

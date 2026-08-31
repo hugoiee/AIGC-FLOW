@@ -15,6 +15,13 @@
       "when": 1788063757811,
       "tag": "0001_lumpy_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788186103687,
+      "tag": "0002_bright_victor_mancha",
+      "breakpoints": true
     }
   ]
 }

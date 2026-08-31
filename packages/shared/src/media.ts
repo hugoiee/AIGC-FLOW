@@ -64,15 +64,16 @@ export function mediaKindOf(mimeType: string, filename = ""): MediaKind | null {
 }
 
 /**
- * 上传接口的返回。形状对齐公司内网接口（docs/接口文档.md），
- * 这样从 dev 的本地实现切到内网转发时前端不用改。
+ * 上传接口的返回（本服务包装后的形状）。
+ * 内网接口本身只回 { urls: [...] }（docs/接口文档.md），服务端转发层
+ * 把它包装成逐文件的结果，一个文件失败不牵连整批。
  */
 export const uploadedFileSchema = z.object({
   filename: z.string(),
   url: z.string(),
-  status: z.string(),
-  /** 内容哈希命中已有文件时为 true */
-  duplicate: z.boolean(),
+  status: z.enum(["uploaded", "error"]),
+  /** status 为 error 时的原因 */
+  error: z.string().optional(),
 });
 
 export const uploadResponseSchema = z.object({

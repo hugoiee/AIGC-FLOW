@@ -43,8 +43,8 @@ export function downloadableMedia(nodes: Node[], selectedIds: string[]): Downloa
 /**
  * 逐个触发下载。
  *
- * 素材地址不让浏览器直连（local 模式在 3001 没挂 CORS，proxy 模式更是内网 IP），
- * 统一走服务端的 /api/uploads/download 转发，它带 Content-Disposition，
+ * 素材地址不让浏览器直连（bcebos 没挂 CORS，也不带 Content-Disposition，
+ * <a download> 跨域触发不了存盘），统一走服务端的 /api/uploads/download 转发，
  * 浏览器见到就会存盘，一个 <a> 就够了。
  *
  * 选多个时浏览器会弹一次「是否允许下载多个文件」，用户点允许即可 ——
