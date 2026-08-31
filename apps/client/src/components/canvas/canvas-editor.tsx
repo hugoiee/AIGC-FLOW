@@ -194,7 +194,10 @@ export function CanvasEditor({
     [setNodes, commitNow],
   );
 
-  const canvasActions = useMemo(() => ({ renameNode }), [renameNode]);
+  // 单击节点才记为 active（框选不触发 onNodeClick），图像生成节点据此决定是否展开菜单
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+
+  const canvasActions = useMemo(() => ({ renameNode, activeNodeId }), [renameNode, activeNodeId]);
 
   const selectedIds = useMemo(
     () => nodes.filter((node) => node.selected).map((node) => node.id),
@@ -395,6 +398,9 @@ export function CanvasEditor({
             onNodeDragStop={() => commitNow(nodes, edges)}
             onNodesDelete={() => commitNow(nodes, edges)}
             onEdgesDelete={() => commitNow(nodes, edges)}
+            onNodeClick={(_, node) => setActiveNodeId(node.id)}
+            onPaneClick={() => setActiveNodeId(null)}
+            onSelectionStart={() => setActiveNodeId(null)}
             nodeTypes={NODE_TYPES}
             colorMode={resolvedTheme === "dark" ? "dark" : "light"}
             defaultViewport={initialViewport}

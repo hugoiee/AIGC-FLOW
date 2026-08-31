@@ -13,17 +13,16 @@ const KIND_ICON = { image: FileImage, video: FileVideo, audio: Music } as const;
 const ACCENT = "#3b82f6";
 
 /**
- * 唯一的连接点：浮在节点右外侧的圆形「+」，样式对齐
- * docs/Img/单右侧端点样式示意.png。
+ * 唯一的连接点：骑在节点右边缘垂直中心的圆形「+」。
  *
- * right 为负让它整个挪到节点外面 —— 覆在画面上会挡住素材本身。
- * 位置靠 React Flow 自带的 .react-flow__handle-right（translate + top:50%）居中，
- * 这里只覆盖 right 和外观。
+ * right: -10 让 20px 的圆一半在节点外 —— 完全悬空的话连线会看起来
+ * 从节点边缘出发、够不到端点。位置靠 React Flow 自带的
+ * .react-flow__handle-right（translate + top:50%）居中，这里只覆盖 right 和外观。
  */
 const SOURCE_HANDLE_STYLE: CSSProperties = {
   width: 20,
   height: 20,
-  right: -28,
+  right: -10,
   borderRadius: 9999,
   border: "1px solid var(--border)",
   backgroundColor: "var(--background)",
@@ -242,7 +241,7 @@ function MediaBody({
 function BrokenMediaPlaceholder({ media }: { media: MediaNodeData }) {
   const Icon = KIND_ICON[media.kind];
   return (
-    <div className="flex size-full flex-col items-center justify-center gap-1.5 rounded-md bg-muted px-3 text-center text-muted-foreground/70">
+    <div className="flex size-full flex-col items-center justify-center gap-1.5 rounded-md bg-[#e6e6e6] px-3 text-center text-muted-foreground/70 dark:bg-muted">
       <Icon className="size-6" strokeWidth={1.5} />
       <span className="max-w-full truncate text-xs">{media.label}</span>
       <span className="text-[10px] opacity-70">素材加载失败</span>

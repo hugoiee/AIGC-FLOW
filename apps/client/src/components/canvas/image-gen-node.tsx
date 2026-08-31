@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ModelIcon } from "./model-icon";
@@ -88,6 +89,9 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   const { updateNodeData } = useReactFlow();
   // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
   const zoom = useStore((state) => state.transform[2]);
+  // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
+  const { activeNodeId } = useCanvasActions();
+  const showMenu = Boolean(selected) && activeNodeId === id;
 
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
@@ -150,21 +154,46 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
       )}
 
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
-        <div
-          className={cn(
-            "w-full overflow-hidden rounded-md",
-            selected && "outline outline-1 outline-[#3b82f6]",
-          )}
-        >
-          <ResultArea gen={gen} aspect={currentAspect(gen)} />
+        {/*
+          连接端点挂在占位符容器上（relative 定位的这层），垂直居中于占位符两侧，
+          菜单在下方展开 / 收起都不会影响端点位置。端点不能放进 overflow-hidden
+          那层，会被圆角裁掉，所以套了两层。
+        */}
+        <div className="relative">
+          <div
+            className={cn(
+              "w-full overflow-hidden rounded-md",
+              selected && "outline outline-1 outline-[#3b82f6]",
+            )}
+          >
+            <ResultArea gen={gen} aspect={currentAspect(gen)} />
+          </div>
+
+          {/* 左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
+              端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出 */}
+          <Handle type="target" position={Position.Left} style={{ ...HANDLE_BASE, left: -10 }}>
+            <Plus className="pointer-events-none size-3" />
+          </Handle>
+          <Handle
+            type="source"
+            position={Position.Right}
+            style={{
+              ...HANDLE_BASE,
+              right: -10,
+              opacity: selected ? 1 : 0,
+              pointerEvents: selected ? "auto" : "none",
+            }}
+          >
+            <Plus className="pointer-events-none size-3" />
+          </Handle>
         </div>
 
         {/*
-          配置菜单点选节点才展开。外层用 1/zoom 反向缩放让它在屏幕上恒定大小 ——
-          transform 不改变布局盒，缩小画布时菜单会视觉上超出节点宽度，这是预期行为
-          （和选中工具条一类的固定 UI 同语义）。
+          配置菜单单击节点才展开（框选不展开）。外层用 1/zoom 反向缩放让它在屏幕上
+          恒定大小 —— transform 不改变布局盒，缩小画布时菜单会视觉上超出节点宽度，
+          这是预期行为（和选中工具条一类的固定 UI 同语义）。
         */}
-        {selected && (
+        {showMenu && (
           <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
               <ReferenceChips urls={referenceUrls} />
@@ -195,27 +224,6 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           </div>
         )}
       </div>
-
-      {/*
-        左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
-        端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出。
-        都放在卡片外层，避免被圆角裁掉。
-      */}
-      <Handle type="target" position={Position.Left} style={{ ...HANDLE_BASE, left: -28 }}>
-        <Plus className="pointer-events-none size-3" />
-      </Handle>
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{
-          ...HANDLE_BASE,
-          right: -28,
-          opacity: selected ? 1 : 0,
-          pointerEvents: selected ? "auto" : "none",
-        }}
-      >
-        <Plus className="pointer-events-none size-3" />
-      </Handle>
     </>
   );
 }
@@ -246,7 +254,7 @@ function ResultArea({ gen, aspect }: { gen: ImageGenNodeData; aspect: number }) 
   if (loadFailed) {
     return (
       <div
-        className="flex w-full flex-col items-center justify-center gap-1.5 bg-muted text-muted-foreground/70"
+        className="flex w-full flex-col items-center justify-center gap-1.5 bg-[#e6e6e6] text-muted-foreground/70 dark:bg-muted"
         style={{ aspectRatio: aspect }}
       >
         <ImageIcon className="size-6" strokeWidth={1.5} />
@@ -269,7 +277,8 @@ function ResultArea({ gen, aspect }: { gen: ImageGenNodeData; aspect: number }) 
 
   return (
     <div
-      className="flex w-full flex-col items-center justify-center gap-2 bg-muted text-muted-foreground/50"
+      // 占位底色浅色下用 #E6E6E6（画布底已是 #F5F5F5，muted 会融进去看不出边界）
+      className="flex w-full flex-col items-center justify-center gap-2 bg-[#e6e6e6] text-muted-foreground/50 dark:bg-muted"
       style={{ aspectRatio: aspect }}
     >
       {gen.status === "generating" ? (
@@ -470,13 +479,14 @@ function ModelSelect({ nodeId, gen }: { nodeId: string; gen: ImageGenNodeData })
           <ChevronDown className="opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      {/* 固定够宽，Nano Banana Pro 这类长名不换行 */}
+      <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuLabel className="text-muted-foreground">图像模型</DropdownMenuLabel>
         {IMAGE_MODELS.map((item) => (
           <DropdownMenuItem
             key={item.id}
             onSelect={() => updateNodeData(nodeId, { model: item.id })}
-            className={cn(item.id === gen.model && "bg-accent")}
+            className={cn("whitespace-nowrap", item.id === gen.model && "bg-accent")}
           >
             <ModelIcon modelId={item.id} />
             {item.label}

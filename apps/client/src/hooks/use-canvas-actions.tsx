@@ -12,6 +12,11 @@ import { createContext, type ReactNode, useContext } from "react";
 type CanvasActions = {
   /** 改节点名称，会进撤销栈 */
   renameNode: (nodeId: string, label: string) => void;
+  /**
+   * 最近一次被单击的节点 id。用来区分「单击选中」和「框选 / 批量选中」：
+   * 图像生成节点的配置菜单只在单击时展开，框选中不展开。
+   */
+  activeNodeId: string | null;
 };
 
 const CanvasActionsContext = createContext<CanvasActions | null>(null);
