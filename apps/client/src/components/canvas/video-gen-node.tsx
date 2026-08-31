@@ -194,7 +194,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
         {showMenu && (
           <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
-              <ReferenceChips refs={[...imageRefs, ...videoRefs, ...audioRefs]} />
+              <ReferenceChips refs={[...imageRefs, ...videoRefs, ...audioRefs]} frames={isFrames} />
 
               <Textarea
                 value={gen.prompt}
@@ -293,8 +293,60 @@ function ResultArea({ gen, aspect }: { gen: VideoGenNodeData; aspect: number }) 
 
 const CHIP_ICON = { image: ImageIcon, video: FileVideo, audio: Music } as const;
 
-/** 参考素材横排：图片显示缩略图，视频 / 音频显示种类图标；未满补一个占位示例格 */
-function ReferenceChips({ refs }: { refs: ReferenceMedia[] }) {
+/**
+ * 参考素材横排。
+ * 参考图模式：图片显示缩略图，视频 / 音频显示种类图标，未满补一个占位示例格。
+ * 首尾帧模式：固定「首帧」「尾帧」两格（接口按连入顺序取前两张图）；
+ * 音频参考该模式下接口仍支持，照常显示在后面。
+ */
+function ReferenceChips({ refs, frames }: { refs: ReferenceMedia[]; frames: boolean }) {
+  if (frames) {
+    const images = refs.filter((item) => item.kind === "image");
+    const audios = refs.filter((item) => item.kind === "audio");
+
+    return (
+      <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
+        {(["首帧", "尾帧"] as const).map((label, index) => {
+          const item = images[index];
+          return (
+            <div
+              key={label}
+              className="relative h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border bg-muted/40"
+            >
+              {item ? (
+                <>
+                  {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
+                  <img
+                    src={item.url}
+                    alt={label}
+                    draggable={false}
+                    className="size-full object-cover"
+                  />
+                  <span className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center text-[10px] text-white">
+                    {label}
+                  </span>
+                </>
+              ) : (
+                <div className="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground/60">
+                  <ImageIcon className="size-5" strokeWidth={1.5} />
+                  <span className="text-[10px]">{label}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {audios.map(({ url }) => (
+          <div
+            key={url}
+            className="flex h-[68px] w-[56px] shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground"
+          >
+            <ChipIcon kind="audio" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
       {refs.map(({ kind, url }) => (
