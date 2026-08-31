@@ -2,12 +2,14 @@
 
 import {
   DEFAULT_IMAGE_GEN_DATA,
+  DEFAULT_VIDEO_GEN_DATA,
   GROUP_NODE_TYPE,
   IMAGE_GEN_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type Project,
   type ProjectGraph,
+  VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import {
   addEdge,
@@ -55,18 +57,24 @@ import { ImageGenNode } from "./image-gen-node";
 import { MediaNode } from "./media-node";
 import { type CanvasMode, NodePalette } from "./node-palette";
 import { SelectionToolbar } from "./selection-toolbar";
+import { VideoGenNode } from "./video-gen-node";
 import "@xyflow/react/dist/style.css";
 
 const PASTE_OFFSET = 40;
 
 /** 能作为素材来源往外连线的节点类型（批量连线时只带上这些） */
-const SOURCE_CAPABLE_TYPES = new Set<string>([MEDIA_NODE_TYPE, IMAGE_GEN_NODE_TYPE]);
+const SOURCE_CAPABLE_TYPES = new Set<string>([
+  MEDIA_NODE_TYPE,
+  IMAGE_GEN_NODE_TYPE,
+  VIDEO_GEN_NODE_TYPE,
+]);
 
 // 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
 const NODE_TYPES = {
   [MEDIA_NODE_TYPE]: MediaNode,
   [GROUP_NODE_TYPE]: GroupNode,
   [IMAGE_GEN_NODE_TYPE]: ImageGenNode,
+  [VIDEO_GEN_NODE_TYPE]: VideoGenNode,
 };
 
 type CanvasEditorProps = {
@@ -158,25 +166,39 @@ export function CanvasEditor({
     [setEdges, commitNow, nodes, edges],
   );
 
-  /** 图像生成节点：落在视口中心，带一份默认参数 */
-  const handleAddImageGen = useCallback(() => {
-    const rect = wrapperRef.current?.getBoundingClientRect();
-    const center = rect
-      ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
-      : { x: 0, y: 0 };
+  /** 生成类节点：落在视口中心，带一份默认参数 */
+  const addGenNode = useCallback(
+    (type: string, defaults: Record<string, unknown>) => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      const center = rect
+        ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
+        : { x: 0, y: 0 };
 
-    const next: Node[] = [
-      ...nodes,
-      {
-        id: crypto.randomUUID(),
-        type: IMAGE_GEN_NODE_TYPE,
-        position: { x: center.x - 267, y: center.y - 240 },
-        data: { ...DEFAULT_IMAGE_GEN_DATA } as unknown as Record<string, unknown>,
-      },
-    ];
-    setNodes(next);
-    commitNow(next, edges);
-  }, [screenToFlowPosition, setNodes, commitNow, nodes, edges]);
+      const next: Node[] = [
+        ...nodes,
+        {
+          id: crypto.randomUUID(),
+          type,
+          position: { x: center.x - 267, y: center.y - 240 },
+          data: { ...defaults },
+        },
+      ];
+      setNodes(next);
+      commitNow(next, edges);
+    },
+    [screenToFlowPosition, setNodes, commitNow, nodes, edges],
+  );
+
+  const handleAddImageGen = useCallback(
+    () =>
+      addGenNode(IMAGE_GEN_NODE_TYPE, DEFAULT_IMAGE_GEN_DATA as unknown as Record<string, unknown>),
+    [addGenNode],
+  );
+  const handleAddVideoGen = useCallback(
+    () =>
+      addGenNode(VIDEO_GEN_NODE_TYPE, DEFAULT_VIDEO_GEN_DATA as unknown as Record<string, unknown>),
+    [addGenNode],
+  );
 
   /**
    * 改名由节点内部的信息条发起（双击名称），经 context 传下去。
@@ -455,6 +477,7 @@ export function CanvasEditor({
                 mode={mode}
                 onModeChange={setMode}
                 onAddImageGen={handleAddImageGen}
+                onAddVideoGen={handleAddVideoGen}
                 onPickFiles={handlePickFiles}
                 canUndo={history.canUndo}
                 canRedo={history.canRedo}

@@ -25,7 +25,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import { ChevronDown, CircleAlert, ImageIcon, Loader2, Plus, WandSparkles } from "lucide-react";
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -39,24 +39,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
 import { NodeName } from "./node-name";
-
-/** 选中态强调色，和媒体节点保持一致 */
-const ACCENT = "#3b82f6";
-
-/** 圆形外浮连接点，样式对齐媒体节点的 source 端点 */
-const HANDLE_BASE: CSSProperties = {
-  width: 20,
-  height: 20,
-  borderRadius: 9999,
-  border: "1px solid var(--border)",
-  backgroundColor: "var(--background)",
-  color: "var(--muted-foreground)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
 
 /** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
 function currentAspect(gen: ImageGenNodeData): number {
@@ -144,7 +129,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
       {selected && (
         <div
           className="-top-6 pointer-events-none absolute inset-x-0 flex items-center text-xs"
-          style={{ color: ACCENT }}
+          style={{ color: GEN_ACCENT }}
         >
           <span className="flex min-w-0 items-center gap-1">
             <WandSparkles className="size-3.5 shrink-0" />
@@ -171,14 +156,14 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
 
           {/* 左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
               端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出 */}
-          <Handle type="target" position={Position.Left} style={{ ...HANDLE_BASE, left: -10 }}>
+          <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
             <Plus className="pointer-events-none size-3" />
           </Handle>
           <Handle
             type="source"
             position={Position.Right}
             style={{
-              ...HANDLE_BASE,
+              ...GEN_HANDLE_BASE,
               right: -10,
               opacity: selected ? 1 : 0,
               pointerEvents: selected ? "auto" : "none",
@@ -399,69 +384,6 @@ function SizeSetting({ nodeId, gen }: { nodeId: string; gen: ImageGenNodeData })
         )}
       </PopoverContent>
     </Popover>
-  );
-}
-
-/** 质量 / 分辨率的胶囊选项 */
-function PillOption({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-full border px-4 py-1.5 text-sm transition-colors hover:bg-accent",
-        active && "border-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** 宽高比网格里的一格：小矩形示意 + 文案，对齐设计稿 */
-function RatioOption({
-  label,
-  width,
-  height,
-  active,
-  onClick,
-}: {
-  label: string;
-  width: number;
-  height: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  // auto（0×0）画不出比例矩形，给个方形占位
-  const ratio = width > 0 && height > 0 ? width / height : 1;
-  const box = ratio >= 1 ? { width: 20, height: 20 / ratio } : { width: 20 * ratio, height: 20 };
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-16 flex-col items-center justify-center gap-1.5 rounded-lg border text-xs transition-colors hover:bg-accent",
-        active && "border-foreground",
-      )}
-    >
-      {label === "auto" ? (
-        <span className="text-muted-foreground text-sm">auto</span>
-      ) : (
-        <>
-          <span className="rounded-[3px] border-[1.5px] border-foreground/70" style={box} />
-          <span>{label}</span>
-        </>
-      )}
-    </button>
   );
 }
 

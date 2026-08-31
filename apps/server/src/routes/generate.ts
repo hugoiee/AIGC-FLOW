@@ -1,4 +1,11 @@
-import { generateImageRequestSchema, gptSizeOf, imageModelOf } from "@aigc-flow/shared";
+import {
+  clampVideoConfig,
+  generateImageRequestSchema,
+  generateVideoRequestSchema,
+  gptSizeOf,
+  imageModelOf,
+  videoVersionOf,
+} from "@aigc-flow/shared";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { getAppSettings } from "../db/settings";
@@ -12,10 +19,39 @@ type AigcResponse = {
   };
 };
 
-export const generateRoute = new Hono().post(
-  "/",
-  zValidator("json", generateImageRequestSchema),
-  async (c) => {
+/**
+ * 转发到内网 /aigc 并取出结果地址。
+ * 内网接口是同步阻塞式的，发出后一直等到生成完成才返回，不设超时。
+ */
+async function callAigc(
+  baseUrl: string,
+  payload: Record<string, unknown>,
+): Promise<{ url: string } | { message: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/aigc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    console.error("[generate] fetch failed", error);
+    return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
+  }
+
+  if (!res.ok) return { message: `内网生成服务返回 ${res.status}` };
+
+  const body = (await res.json().catch(() => null)) as AigcResponse | null;
+  const url = body?.result?.content?.[0];
+  if (body?.result?.status !== "success" || !url) {
+    console.error("[generate] bad response", JSON.stringify(body));
+    return { message: "生成失败，内网服务未返回有效结果" };
+  }
+  return { url };
+}
+
+export const generateRoute = new Hono()
+  .post("/", zValidator("json", generateImageRequestSchema), async (c) => {
     const input = c.req.valid("json");
     const { generateBaseUrl, reqFrom } = getAppSettings();
 
@@ -39,30 +75,40 @@ export const generateRoute = new Hono().post(
       config,
     };
 
-    // 内网接口是同步阻塞式的，发出后一直等到生成完成才返回，不设超时
-    let res: Response;
-    try {
-      res = await fetch(`${generateBaseUrl}/aigc`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      console.error("[generate] fetch failed", error);
-      return c.json({ message: "连不上内网生成服务，确认在内网环境且地址配置正确" }, 502);
+    const outcome = await callAigc(generateBaseUrl, payload);
+    if ("message" in outcome) return c.json({ message: outcome.message }, 502);
+    return c.json({ url: outcome.url });
+  })
+  .post("/video", zValidator("json", generateVideoRequestSchema), async (c) => {
+    const raw = c.req.valid("json");
+    const { generateBaseUrl, reqFrom } = getAppSettings();
+
+    if (!reqFrom) {
+      return c.json({ message: "请先在设置面板填写请求来源标识（req_from）" }, 400);
     }
 
-    if (!res.ok) {
-      return c.json({ message: `内网生成服务返回 ${res.status}` }, 502);
-    }
+    // 版本 / 模式相关的参数约束统一在 shared 的 clampVideoConfig 里收敛
+    const input = clampVideoConfig(raw);
+    const version = videoVersionOf(input.version);
 
-    const body = (await res.json().catch(() => null)) as AigcResponse | null;
-    const url = body?.result?.content?.[0];
-    if (body?.result?.status !== "success" || !url) {
-      console.error("[generate] bad response", JSON.stringify(body));
-      return c.json({ message: "生成失败，内网服务未返回有效结果" }, 502);
-    }
+    const payload = {
+      req_from: reqFrom,
+      model_name: "seedance",
+      version: version.apiVersion,
+      mode: input.mode,
+      prompt: input.prompt,
+      image_list: input.imageList,
+      video_list: input.videoList,
+      audio_list: input.audioList,
+      config: {
+        resolution: input.resolution,
+        ratio: input.ratio,
+        duration: input.duration,
+        generate_audio: input.generateAudio,
+      },
+    };
 
-    return c.json({ url });
-  },
-);
+    const outcome = await callAigc(generateBaseUrl, payload);
+    if ("message" in outcome) return c.json({ message: outcome.message }, 502);
+    return c.json({ url: outcome.url });
+  });

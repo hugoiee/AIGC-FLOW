@@ -9,11 +9,15 @@
 （整理节点 / 创建编组 / 对齐 / 间距 / 批量下载）、编组与解组、双击改节点名。
 媒体节点只有右侧一个 source 端点，选中才显示。**编组暂不支持嵌套。**
 这块的完整决策记录和踩坑见 `docs/画布操作逻辑.md`。
-图像生成节点已接入内网 `/aigc`（GPT Image 2 / Nano Banana 2 / Nano Banana Pro）：
-左侧 target 连参考图（图片媒体节点或另一个生成节点的结果，可链式引用），
-结果显示在节点上方图片区，右侧 source 可被下游引用；`generating` 状态不落盘。
+图像生成节点（GPT Image 2 / Nano Banana 2 / Nano Banana Pro）和视频生成节点
+（Seedance 2.0 / 2.5，参考图模式 + 首尾帧模式）都已接入内网 `/aigc`：
+左侧 target 连参考素材（媒体节点或其他生成节点的结果，按图/视频/音频分流到
+image_list / video_list / audio_list），结果显示在节点上方，右侧 source 可被
+下游引用；`generating` 状态不落盘。版本/模式相关的参数收敛统一在 shared 的
+`clampVideoConfig`。**首尾帧模式的 mode 值是占位的 `first_last_frame`**，
+接口文档没写明，内网联调后改 `packages/shared/src/video-gen.ts` 一处即可。
 生成接口要求 req_from（设置面板里填），不填服务端直接拒绝。
-视频/音频生成节点尚未开发。
+音频生成节点尚未开发。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
 
@@ -133,7 +137,8 @@ export type AppType = typeof app;
 
 - 嵌套编组：目前选区含编组或组内节点时按钮置灰，要支持得处理多层坐标变换、
   递归解组、递归收集组内素材。
-- 视频（seedance）/ 音频生成节点；图像生成的多张结果（n>1）与结果历史。
+- 音频生成节点；图像生成的多张结果（n>1）与结果历史。
+- 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
   `{result:{content:[url],status:"success"}}`），把设置面板的生成地址指过去即可。
 

@@ -6,6 +6,7 @@ import {
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type ProjectGraph,
+  VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
 
@@ -120,8 +121,11 @@ export function fromPersistedGraph(graph: ProjectGraph): { nodes: Node[]; edges:
   };
 }
 
+/** 「生成中」是运行时状态的节点类型，落盘一律回退成 idle */
+const GENERATING_NODE_TYPES = new Set<string>([IMAGE_GEN_NODE_TYPE, VIDEO_GEN_NODE_TYPE]);
+
 /**
- * 图像生成节点的「生成中」是运行时状态，落盘一律回退成 idle ——
+ * 生成类节点的「生成中」是运行时状态，落盘一律回退成 idle ——
  * 刷新后请求已经断了，存下来只会是一个永远转圈的死节点。
  */
 function persistedData(node: Node): CanvasNode["data"] {
@@ -129,7 +133,7 @@ function persistedData(node: Node): CanvasNode["data"] {
     ...node.data,
     label: String(node.data?.label ?? "未命名节点"),
   };
-  if (node.type === IMAGE_GEN_NODE_TYPE && data.status === "generating") {
+  if (GENERATING_NODE_TYPES.has(node.type ?? "") && data.status === "generating") {
     return { ...data, status: "idle" };
   }
   return data;
