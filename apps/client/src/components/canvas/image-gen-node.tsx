@@ -9,6 +9,7 @@ import {
   IMAGE_MODELS,
   type ImageGenNodeData,
   imageModelOf,
+  MAX_REFERENCE_IMAGES,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   NANO_ASPECT_RATIOS,
@@ -21,6 +22,7 @@ import {
   useNodeConnections,
   useNodesData,
   useReactFlow,
+  useStore,
 } from "@xyflow/react";
 import { ChevronDown, CircleAlert, ImageIcon, Loader2, Plus, WandSparkles } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
@@ -42,9 +44,6 @@ import { NodeName } from "./node-name";
 /** 选中态强调色，和媒体节点保持一致 */
 const ACCENT = "#3b82f6";
 
-/** 参考图 chips 至少显示这么多格，空位用占位样式补齐（对齐设计稿） */
-const MIN_CHIP_SLOTS = 8;
-
 /** 圆形外浮连接点，样式对齐媒体节点的 source 端点 */
 const HANDLE_BASE: CSSProperties = {
   width: 20,
@@ -57,6 +56,16 @@ const HANDLE_BASE: CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
 };
+
+/** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
+function currentAspect(gen: ImageGenNodeData): number {
+  if (gen.model === "gpt-image-2") {
+    const preset = gptSizeOf(gen.sizePreset);
+    return preset.width > 0 ? preset.width / preset.height : 16 / 9;
+  }
+  const [w = 16, h = 9] = gen.aspectRatio.split(":").map(Number);
+  return w / h;
+}
 
 /**
  * 从上游节点里取出能作为参考图的 URL：
@@ -77,6 +86,8 @@ export function referenceUrlOf(node: { type?: string; data: unknown }): string |
 export function ImageGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as ImageGenNodeData;
   const { updateNodeData } = useReactFlow();
+  // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
+  const zoom = useStore((state) => state.transform[2]);
 
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
@@ -100,7 +111,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
         json: {
           model: gen.model,
           prompt: gen.prompt.trim(),
-          imageList: referenceUrls,
+          imageList: referenceUrls.slice(0, MAX_REFERENCE_IMAGES),
           quality: gen.quality,
           sizePreset: gen.sizePreset,
           aspectRatio: gen.aspectRatio,
@@ -138,43 +149,51 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
         </div>
       )}
 
-      <div
-        className={cn("flex flex-col gap-4", selected && "rounded-lg")}
-        style={{ width: IMAGE_GEN_NODE_WIDTH }}
-      >
-        <ResultArea gen={gen} />
-
+      <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
         <div
           className={cn(
-            "flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm",
+            "w-full overflow-hidden rounded-md",
             selected && "outline outline-1 outline-[#3b82f6]",
           )}
         >
-          <ReferenceChips urls={referenceUrls} />
+          <ResultArea gen={gen} aspect={currentAspect(gen)} />
+        </div>
 
-          <Textarea
-            value={gen.prompt}
-            onChange={(event) => updateNodeData(id, { prompt: event.target.value })}
-            placeholder="今天我们要创作什么？"
-            className="nodrag nowheel min-h-16 resize-none border-none p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
-          />
+        {/*
+          配置菜单点选节点才展开。外层用 1/zoom 反向缩放让它在屏幕上恒定大小 ——
+          transform 不改变布局盒，缩小画布时菜单会视觉上超出节点宽度，这是预期行为
+          （和选中工具条一类的固定 UI 同语义）。
+        */}
+        {selected && (
+          <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>
+            <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
+              <ReferenceChips urls={referenceUrls} />
 
-          <div className="flex items-center justify-between gap-2">
-            <SizeSetting nodeId={id} gen={gen} />
-            <div className="flex items-center gap-2">
-              <ModelSelect nodeId={id} gen={gen} />
-              <Button
-                size="sm"
-                className="nodrag rounded-full px-5"
-                disabled={generating || !gen.prompt.trim()}
-                onClick={handleGenerate}
-              >
-                {generating && <Loader2 className="animate-spin" />}
-                {generating ? "生成中" : "生成"}
-              </Button>
+              <Textarea
+                value={gen.prompt}
+                onChange={(event) => updateNodeData(id, { prompt: event.target.value })}
+                placeholder="今天我们要创作什么？"
+                className="nodrag nowheel max-h-[140px] min-h-16 resize-none overflow-y-auto border-none p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+              />
+
+              <div className="flex items-center justify-between gap-2">
+                <SizeSetting nodeId={id} gen={gen} />
+                <div className="flex items-center gap-2">
+                  <ModelSelect nodeId={id} gen={gen} />
+                  <Button
+                    size="sm"
+                    className="nodrag rounded-full px-5"
+                    disabled={generating || !gen.prompt.trim()}
+                    onClick={handleGenerate}
+                  >
+                    {generating && <Loader2 className="animate-spin" />}
+                    {generating ? "生成中" : "生成"}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/*
@@ -201,8 +220,11 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   );
 }
 
-/** 上方结果区：占位 → 生成中 → 结果图 / 失败。宽度对齐设计稿的 380，居中 */
-function ResultArea({ gen }: { gen: ImageGenNodeData }) {
+/**
+ * 上方结果区：占位 → 生成中 → 结果图 / 失败。
+ * 拉满节点宽度，占位比例跟随图像设置里选的宽高比；结果图按自身比例展示。
+ */
+function ResultArea({ gen, aspect }: { gen: ImageGenNodeData; aspect: number }) {
   if (gen.status === "ready" && gen.resultUrl) {
     return (
       // biome-ignore lint/performance/noImgElement: 生成结果是任意远程图片，无需 next/image
@@ -210,14 +232,17 @@ function ResultArea({ gen }: { gen: ImageGenNodeData }) {
         src={gen.resultUrl}
         alt={gen.prompt || gen.label}
         draggable={false}
-        className="mx-auto w-[380px] select-none rounded-md"
+        className="w-full select-none"
       />
     );
   }
 
   if (gen.status === "error") {
     return (
-      <div className="mx-auto flex aspect-video w-[380px] flex-col items-center justify-center gap-1.5 rounded-md border border-destructive/60 border-dashed bg-destructive/5 px-4 text-center text-destructive text-xs">
+      <div
+        className="flex w-full flex-col items-center justify-center gap-1.5 border border-destructive/60 border-dashed bg-destructive/5 px-4 text-center text-destructive text-xs"
+        style={{ aspectRatio: aspect }}
+      >
         <CircleAlert className="size-5" />
         <span className="line-clamp-3">{gen.error ?? "生成失败"}</span>
       </div>
@@ -225,7 +250,10 @@ function ResultArea({ gen }: { gen: ImageGenNodeData }) {
   }
 
   return (
-    <div className="mx-auto flex aspect-video w-[380px] flex-col items-center justify-center gap-2 rounded-md bg-muted text-muted-foreground/50">
+    <div
+      className="flex w-full flex-col items-center justify-center gap-2 bg-muted text-muted-foreground/50"
+      style={{ aspectRatio: aspect }}
+    >
       {gen.status === "generating" ? (
         <>
           <Loader2 className="size-8 animate-spin" />
@@ -238,31 +266,24 @@ function ResultArea({ gen }: { gen: ImageGenNodeData }) {
   );
 }
 
-/** 参考图横排。已连接的显示缩略图，空位补占位格 */
+/** 参考图横排：已连接的缩略图（上限 16），未满时只补一个占位示例格 */
 function ReferenceChips({ urls }: { urls: string[] }) {
-  const placeholders = Math.max(MIN_CHIP_SLOTS - urls.length, 1);
+  const shown = urls.slice(0, MAX_REFERENCE_IMAGES);
 
   return (
     <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
-      {urls.map((url) => (
-        <div
-          key={url}
-          className="size-[56px] h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border"
-        >
+      {shown.map((url) => (
+        <div key={url} className="h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border">
           {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
           <img src={url} alt="参考图" draggable={false} className="size-full object-cover" />
         </div>
       ))}
-      {Array.from({ length: placeholders }, (_, index) => (
-        <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: 纯占位格，无状态可言
-          key={index}
-          className="flex h-[68px] w-[56px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border bg-muted/40 text-muted-foreground/60"
-        >
+      {shown.length < MAX_REFERENCE_IMAGES && (
+        <div className="flex h-[68px] w-[56px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border bg-muted/40 text-muted-foreground/60">
           <ImageIcon className="size-5" strokeWidth={1.5} />
           <span className="text-[10px]">参考图</span>
         </div>
-      ))}
+      )}
     </div>
   );
 }

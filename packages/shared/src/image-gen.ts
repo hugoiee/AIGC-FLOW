@@ -103,8 +103,8 @@ export const nanoImageSizeSchema = z.enum(["1K", "2K", "4K"]);
 export type NanoImageSize = z.infer<typeof nanoImageSizeSchema>;
 export const NANO_IMAGE_SIZES = nanoImageSizeSchema.options;
 
-/** 参考图数量上限，对齐接口 image_list 的约定 */
-export const MAX_REFERENCE_IMAGES = 10;
+/** 参考图数量上限 */
+export const MAX_REFERENCE_IMAGES = 16;
 
 /**
  * 图像生成节点的 data。
@@ -128,15 +128,15 @@ export const imageGenNodeDataSchema = z.object({
 
 export type ImageGenNodeData = z.infer<typeof imageGenNodeDataSchema>;
 
-/** 新建图像生成节点的默认 data，默认值对齐设计稿（中 · 16:9(2k)） */
+/** 新建图像生成节点的默认 data。gpt 默认自动 · 16:9(4k)，nano 默认 16:9 · 4K */
 export const DEFAULT_IMAGE_GEN_DATA: ImageGenNodeData = {
   label: "图像生成",
   model: "gpt-image-2",
   prompt: "",
-  quality: "medium",
-  sizePreset: "16:9(2k)",
+  quality: "auto",
+  sizePreset: "16:9(4k)",
   aspectRatio: "16:9",
-  imageSize: "1K",
+  imageSize: "4K",
   status: "idle",
 };
 
@@ -148,10 +148,10 @@ export const generateImageRequestSchema = z.object({
   model: imageModelIdSchema,
   prompt: z.string().min(1, "提示词不能为空"),
   imageList: z.array(z.url()).max(MAX_REFERENCE_IMAGES).default([]),
-  quality: gptQualitySchema.default("medium"),
-  sizePreset: gptSizePresetSchema.default("16:9(2k)"),
+  quality: gptQualitySchema.default("auto"),
+  sizePreset: gptSizePresetSchema.default("16:9(4k)"),
   aspectRatio: nanoAspectRatioSchema.default("16:9"),
-  imageSize: nanoImageSizeSchema.default("1K"),
+  imageSize: nanoImageSizeSchema.default("4K"),
 });
 
 export type GenerateImageRequest = z.infer<typeof generateImageRequestSchema>;
