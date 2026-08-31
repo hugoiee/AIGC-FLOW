@@ -22,6 +22,8 @@ type CanvasActions = {
    * 生成节点据此播放「可放置」动画；松手或悬到不能接受的节点时为 null。
    */
   dropTargetId: string | null;
+  /** 与当前选中节点直接连线的邻居节点 id，节点据此显示虚线高亮 */
+  neighborIds: ReadonlySet<string>;
 };
 
 const CanvasActionsContext = createContext<CanvasActions | null>(null);

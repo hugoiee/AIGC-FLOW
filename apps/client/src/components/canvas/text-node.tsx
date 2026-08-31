@@ -5,6 +5,7 @@ import { Handle, type NodeProps, NodeResizer, Position, useReactFlow } from "@xy
 import { Plus, Type } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
+import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE } from "./gen-node-controls";
 import { NodeName } from "./node-name";
@@ -26,6 +27,9 @@ export function TextNode({ id, data, selected }: NodeProps) {
   const text = data as unknown as TextNodeData;
   const { updateNodeData } = useReactFlow();
   const [editing, setEditing] = useState(false);
+  // 有直接连线的节点被选中时，本节点显示虚线高亮
+  const { neighborIds } = useCanvasActions();
+  const isNeighbor = !selected && neighborIds.has(id);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -60,6 +64,7 @@ export function TextNode({ id, data, selected }: NodeProps) {
         className={cn(
           "size-full rounded-xl border bg-card p-3 shadow-sm",
           selected && "outline outline-1 outline-[#3b82f6]",
+          isNeighbor && "outline outline-2 outline-[#3b82f6]/80 outline-dashed",
         )}
         onDoubleClick={() => setEditing(true)}
       >

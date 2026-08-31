@@ -4,6 +4,7 @@ import { AUDIO_NODE_SIZE, fitMediaSize, type MediaNodeData } from "@aigc-flow/sh
 import { Handle, type NodeProps, NodeResizer, Position, useReactFlow } from "@xyflow/react";
 import { CircleAlert, FileImage, FileVideo, Loader2, Music, Plus } from "lucide-react";
 import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "react";
+import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { NodeName } from "./node-name";
@@ -46,6 +47,9 @@ export function MediaNode({ id, data, selected }: NodeProps) {
   const Icon = KIND_ICON[media.kind];
   const { updateNode, updateNodeData } = useReactFlow();
   const freeResize = useShiftKey(Boolean(selected));
+  // 有直接连线的节点被选中时，本节点显示虚线高亮
+  const { neighborIds } = useCanvasActions();
+  const isNeighbor = !selected && neighborIds.has(id);
 
   const isAudio = media.kind === "audio";
   const isPlaceholder = media.status !== "ready" || !media.url;
@@ -91,6 +95,7 @@ export function MediaNode({ id, data, selected }: NodeProps) {
           "size-full overflow-hidden",
           // 未选中时完全没有外壳，画布上只看得到媒体本身
           selected && "outline outline-1 outline-[#3b82f6]",
+          isNeighbor && "outline outline-2 outline-[#3b82f6]/80 outline-dashed",
           (isAudio || isPlaceholder) && "rounded-md",
         )}
       >

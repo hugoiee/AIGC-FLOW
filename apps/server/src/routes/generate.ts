@@ -26,12 +26,12 @@ type AigcResponse = {
  * 内网接口是同步阻塞式的，发出后一直等到生成完成才返回，不设超时。
  */
 async function callAigc(
-  baseUrl: string,
+  endpoint: string,
   payload: Record<string, unknown>,
 ): Promise<{ url: string } | { message: string }> {
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/aigc`, {
+    res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -74,7 +74,7 @@ function recordGeneration(
 export const generateRoute = new Hono()
   .post("/", zValidator("json", generateImageRequestSchema), async (c) => {
     const input = c.req.valid("json");
-    const { generateBaseUrl, reqFrom } = getAppSettings();
+    const { generateUrl, reqFrom } = getAppSettings();
 
     if (!reqFrom) {
       return c.json({ message: "请先在设置面板填写请求来源标识（req_from）" }, 400);
@@ -96,14 +96,14 @@ export const generateRoute = new Hono()
       config,
     };
 
-    const outcome = await callAigc(generateBaseUrl, payload);
+    const outcome = await callAigc(generateUrl, payload);
     recordGeneration("image", payload, outcome);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });
   })
   .post("/video", zValidator("json", generateVideoRequestSchema), async (c) => {
     const raw = c.req.valid("json");
-    const { generateBaseUrl, reqFrom } = getAppSettings();
+    const { generateUrl, reqFrom } = getAppSettings();
 
     if (!reqFrom) {
       return c.json({ message: "请先在设置面板填写请求来源标识（req_from）" }, 400);
@@ -130,7 +130,7 @@ export const generateRoute = new Hono()
       },
     };
 
-    const outcome = await callAigc(generateBaseUrl, payload);
+    const outcome = await callAigc(generateUrl, payload);
     recordGeneration("video", payload, outcome, input.duration);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });

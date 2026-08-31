@@ -2,12 +2,12 @@ import type { MediaKind, UploadedFile } from "@aigc-flow/shared";
 import { getAppSettings } from "../db/settings";
 
 /**
- * 内网接口按媒体种类分了两个端点：音频走 /api/upload-media，图像和视频走 /api/upload。
- * 见 docs/接口文档.md。根地址在设置面板里配置（存 settings 表）。
+ * 内网接口按媒体种类分了两个端点：音频与图像/视频各一个完整地址，
+ * 都在设置面板里配置（存 settings 表），见 docs/接口文档.md。
  */
 function remoteEndpoint(kind: MediaKind): string {
-  const path = kind === "audio" ? "/api/upload-media" : "/api/upload";
-  return `${getAppSettings().uploadBaseUrl.replace(/\/+$/, "")}${path}`;
+  const settings = getAppSettings();
+  return kind === "audio" ? settings.audioUploadUrl : settings.imageUploadUrl;
 }
 
 /**

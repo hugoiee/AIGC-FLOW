@@ -385,14 +385,26 @@ export function CanvasEditor({
     setFloatLine(null);
   }, []);
 
-  const canvasActions = useMemo(
-    () => ({ renameNode, activeNodeId, dropTargetId }),
-    [renameNode, activeNodeId, dropTargetId],
-  );
-
   const selectedIds = useMemo(
     () => nodes.filter((node) => node.selected).map((node) => node.id),
     [nodes],
+  );
+
+  /** 与选中节点直接连线的邻居（不含选中节点本身），选中时给它们虚线高亮 */
+  const neighborIds = useMemo(() => {
+    if (selectedIds.length === 0) return new Set<string>();
+    const selected = new Set(selectedIds);
+    const neighbors = new Set<string>();
+    for (const edge of edges) {
+      if (selected.has(edge.source) && !selected.has(edge.target)) neighbors.add(edge.target);
+      if (selected.has(edge.target) && !selected.has(edge.source)) neighbors.add(edge.source);
+    }
+    return neighbors;
+  }, [selectedIds, edges]);
+
+  const canvasActions = useMemo(
+    () => ({ renameNode, activeNodeId, dropTargetId, neighborIds }),
+    [renameNode, activeNodeId, dropTargetId, neighborIds],
   );
 
   /** 排布类操作统一走这里：算出新数组 → setNodes → 整体入历史栈，一次 ⌘Z 全退回 */

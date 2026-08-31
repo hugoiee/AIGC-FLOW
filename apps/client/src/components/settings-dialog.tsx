@@ -26,16 +26,22 @@ const FIELDS: Array<{
   hint: string;
 }> = [
   {
-    key: "uploadBaseUrl",
-    label: "内网上传服务地址",
-    placeholder: "http://10.75.202.161:8511",
-    hint: "素材经服务端转发上传到这里，填完整根地址（含 http:// 和端口）。",
+    key: "imageUploadUrl",
+    label: "图像 / 视频上传接口",
+    placeholder: "http://10.75.202.161:8511/api/upload",
+    hint: "图片和视频素材经服务端转发上传到这里，填完整接口地址。",
   },
   {
-    key: "generateBaseUrl",
-    label: "内网生成服务地址",
-    placeholder: "http://10.75.202.161:8204",
-    hint: "模型生成（/aigc）走这里，和上传服务不是同一个端口。",
+    key: "audioUploadUrl",
+    label: "音频上传接口",
+    placeholder: "http://10.75.202.161:8511/api/upload-media",
+    hint: "音频素材的上传接口，填完整接口地址。",
+  },
+  {
+    key: "generateUrl",
+    label: "AIGC 生成接口",
+    placeholder: "http://10.75.202.161:8204/aigc",
+    hint: "图像 / 视频生成（/aigc）走这里，注意端口和上传不同。",
   },
   {
     key: "reqFrom",

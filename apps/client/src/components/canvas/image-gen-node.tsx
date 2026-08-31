@@ -78,7 +78,9 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
   const zoom = useStore((state) => state.transform[2]);
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
-  const { activeNodeId, dropTargetId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, neighborIds } = useCanvasActions();
+  // 有直接连线的节点被选中时，本节点显示虚线高亮
+  const isNeighbor = !selected && neighborIds.has(id);
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
@@ -168,6 +170,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
             className={cn(
               "w-full overflow-hidden rounded-md",
               selected && "outline outline-1 outline-[#3b82f6]",
+              isNeighbor && "outline outline-2 outline-[#3b82f6]/80 outline-dashed",
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
