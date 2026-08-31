@@ -19,8 +19,8 @@ import {
   MiniMap,
   type Node,
   Panel,
-  Position,
   ReactFlow,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -53,17 +53,14 @@ import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
 import { GroupNode } from "./group-node";
 import { ImageGenNode } from "./image-gen-node";
 import { MediaNode } from "./media-node";
-import { type CanvasMode, type NodeKind, NodePalette } from "./node-palette";
+import { type CanvasMode, NodePalette } from "./node-palette";
 import { SelectionToolbar } from "./selection-toolbar";
 import "@xyflow/react/dist/style.css";
 
-const KIND_LABELS: Record<NodeKind, string> = {
-  input: "输入",
-  default: "处理",
-  output: "输出",
-};
-
 const PASTE_OFFSET = 40;
+
+/** 能作为素材来源往外连线的节点类型（批量连线时只带上这些） */
+const SOURCE_CAPABLE_TYPES = new Set<string>([MEDIA_NODE_TYPE, IMAGE_GEN_NODE_TYPE]);
 
 // 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
 const NODE_TYPES = {
@@ -134,38 +131,31 @@ export function CanvasEditor({
       if (connection.source === connection.target) return;
       // 新状态必须在 updater 外面算：updater 里做副作用在 StrictMode 下会跑两次，
       // 历史栈会被塞进重复项，表现为「撤销要按两下才动一次」
-      const next = addEdge(connection, edges);
+      let next = addEdge(connection, edges);
+
+      // 批量连线：起手的节点在多选选区里时，选区内其他资源节点一起连到同一目标。
+      // addEdge 会跳过完全相同的连线，不用自己去重。
+      const selected = nodes.filter((node) => node.selected);
+      if (selected.some((node) => node.id === connection.source)) {
+        for (const node of selected) {
+          if (node.id === connection.source || node.id === connection.target) continue;
+          if (!SOURCE_CAPABLE_TYPES.has(node.type ?? "")) continue;
+          next = addEdge(
+            {
+              source: node.id,
+              sourceHandle: null,
+              target: connection.target,
+              targetHandle: connection.targetHandle,
+            },
+            next,
+          );
+        }
+      }
+
       setEdges(next);
       commitNow(nodes, next);
     },
     [setEdges, commitNow, nodes, edges],
-  );
-
-  const handleAddNode = useCallback(
-    (kind: NodeKind) => {
-      const rect = wrapperRef.current?.getBoundingClientRect();
-      const center = rect
-        ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
-        : { x: 0, y: 0 };
-
-      const next: Node[] = [
-        ...nodes,
-        {
-          id: crypto.randomUUID(),
-          type: kind,
-          position: {
-            x: center.x - 75 + (Math.random() - 0.5) * 80,
-            y: center.y - 20 + (Math.random() - 0.5) * 80,
-          },
-          data: { label: `${KIND_LABELS[kind]}节点` },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-        },
-      ];
-      setNodes(next);
-      commitNow(next, edges);
-    },
-    [screenToFlowPosition, setNodes, commitNow, nodes, edges],
   );
 
   /** 图像生成节点：落在视口中心，带一份默认参数 */
@@ -416,6 +406,8 @@ export function CanvasEditor({
             // 移动模式：左键平移，节点不可拖（拖节点也是平移），语义对齐 Figma 的抓手
             panOnDrag={isMove ? true : [1, 2]}
             selectionOnDrag={!isMove}
+            // 框选碰到节点就算选中，不要求整个框住
+            selectionMode={SelectionMode.Partial}
             nodesDraggable={!isMove}
             // 移动模式下必须连 selectable 一起关掉：只关 draggable 的话，
             // 节点本身和多选时那层 nodesselection-rect 仍然吃指针事件，
@@ -456,7 +448,6 @@ export function CanvasEditor({
               <NodePalette
                 mode={mode}
                 onModeChange={setMode}
-                onAdd={handleAddNode}
                 onAddImageGen={handleAddImageGen}
                 onPickFiles={handlePickFiles}
                 canUndo={history.canUndo}

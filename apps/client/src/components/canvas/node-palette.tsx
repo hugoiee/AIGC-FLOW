@@ -1,16 +1,6 @@
 "use client";
 
-import {
-  CircleDot,
-  Hand,
-  LogIn,
-  LogOut,
-  MousePointer2,
-  Redo2,
-  Undo2,
-  Upload,
-  WandSparkles,
-} from "lucide-react";
+import { Hand, MousePointer2, Redo2, Undo2, Upload, WandSparkles } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -28,26 +18,12 @@ export const CANVAS_MODES = [
 
 export type CanvasMode = (typeof CANVAS_MODES)[number]["mode"];
 
-/**
- * 可添加的节点种类。用的是 React Flow 内置的三种类型，
- * 差别只在连接点：input 只有出口，output 只有入口，default 两头都有。
- * 真实的 AIGC 语义节点（文生图 / 图生视频…）留到接模型调用时再做。
- */
-export const NODE_KINDS = [
-  { type: "input", label: "输入", icon: LogIn, hint: "流程起点，只有出口" },
-  { type: "default", label: "处理", icon: CircleDot, hint: "中间步骤，两头都能连" },
-  { type: "output", label: "输出", icon: LogOut, hint: "流程终点，只有入口" },
-] as const;
-
-export type NodeKind = (typeof NODE_KINDS)[number]["type"];
-
 /** 文件选择框接受的类型，和服务端 mediaKindOf 的判断保持一致 */
 const ACCEPT = "image/*,video/*,audio/*";
 
 type NodePaletteProps = {
   mode: CanvasMode;
   onModeChange: (mode: CanvasMode) => void;
-  onAdd: (kind: NodeKind) => void;
   onAddImageGen: () => void;
   onPickFiles: (files: File[]) => void;
   canUndo: boolean;
@@ -59,7 +35,6 @@ type NodePaletteProps = {
 export function NodePalette({
   mode,
   onModeChange,
-  onAdd,
   onAddImageGen,
   onPickFiles,
   canUndo,
@@ -74,25 +49,6 @@ export function NodePalette({
       <ModeToggle mode={mode} onModeChange={onModeChange} />
 
       <Separator orientation="vertical" className="!h-5 mx-1" />
-
-      {NODE_KINDS.map(({ type, label, icon: Icon, hint }) => (
-        <Tooltip key={type}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onAdd(type)}
-              aria-label={`添加${label}节点`}
-            >
-              <Icon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="font-medium">添加{label}节点</p>
-            <p className="opacity-75">{hint}</p>
-          </TooltipContent>
-        </Tooltip>
-      ))}
 
       <Tooltip>
         <TooltipTrigger asChild>

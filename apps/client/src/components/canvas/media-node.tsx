@@ -158,6 +158,12 @@ function MediaBody({
   media: MediaNodeData;
   onNaturalSize: (w: number, h: number) => void;
 }) {
+  // 素材地址加载失败（服务停了 / 文件被清 / 断网）时给占位符兜底，
+  // 否则 <img> 会渲染成破图标 + 一大段 alt 文字。url 变了就重试。
+  const [loadFailed, setLoadFailed] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
+  useEffect(() => setLoadFailed(false), [media.url]);
+
   if (media.status === "uploading") {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-2 rounded-md border border-dashed bg-muted/40 text-muted-foreground text-xs">
@@ -177,6 +183,10 @@ function MediaBody({
     );
   }
 
+  if (loadFailed) {
+    return <BrokenMediaPlaceholder media={media} />;
+  }
+
   if (media.kind === "image") {
     return (
       // biome-ignore lint/performance/noImgElement: 用户上传的任意图片，无需 next/image
@@ -187,6 +197,7 @@ function MediaBody({
         onLoad={(event: SyntheticEvent<HTMLImageElement>) =>
           onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
         }
+        onError={() => setLoadFailed(true)}
         className="size-full select-none object-fill"
       />
     );
@@ -202,6 +213,7 @@ function MediaBody({
         onLoadedMetadata={(event: SyntheticEvent<HTMLVideoElement>) =>
           onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
         }
+        onError={() => setLoadFailed(true)}
         className="nodrag size-full object-fill"
       >
         <track kind="captions" />
@@ -216,7 +228,24 @@ function MediaBody({
         <span className="truncate">{media.label}</span>
       </span>
       {/* biome-ignore lint/a11y/useMediaCaption: 用户上传的音频，没有字幕轨 */}
-      <audio src={media.url} controls className="nodrag h-8 w-full" />
+      <audio
+        src={media.url}
+        controls
+        onError={() => setLoadFailed(true)}
+        className="nodrag h-8 w-full"
+      />
+    </div>
+  );
+}
+
+/** 素材地址打不开时的兜底占位：中性灰底 + 种类图标 + 文件名 */
+function BrokenMediaPlaceholder({ media }: { media: MediaNodeData }) {
+  const Icon = KIND_ICON[media.kind];
+  return (
+    <div className="flex size-full flex-col items-center justify-center gap-1.5 rounded-md bg-muted px-3 text-center text-muted-foreground/70">
+      <Icon className="size-6" strokeWidth={1.5} />
+      <span className="max-w-full truncate text-xs">{media.label}</span>
+      <span className="text-[10px] opacity-70">素材加载失败</span>
     </div>
   );
 }

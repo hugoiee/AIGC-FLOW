@@ -25,7 +25,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import { ChevronDown, CircleAlert, ImageIcon, Loader2, Plus, WandSparkles } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -225,15 +225,33 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
  * 拉满节点宽度，占位比例跟随图像设置里选的宽高比；结果图按自身比例展示。
  */
 function ResultArea({ gen, aspect }: { gen: ImageGenNodeData; aspect: number }) {
-  if (gen.status === "ready" && gen.resultUrl) {
+  // 结果图地址失效（内网结果有有效期）时兜底成占位符，避免破图 + 大段 alt 文字
+  const [loadFailed, setLoadFailed] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
+  useEffect(() => setLoadFailed(false), [gen.resultUrl]);
+
+  if (gen.status === "ready" && gen.resultUrl && !loadFailed) {
     return (
       // biome-ignore lint/performance/noImgElement: 生成结果是任意远程图片，无需 next/image
       <img
         src={gen.resultUrl}
         alt={gen.prompt || gen.label}
         draggable={false}
+        onError={() => setLoadFailed(true)}
         className="w-full select-none"
       />
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div
+        className="flex w-full flex-col items-center justify-center gap-1.5 bg-muted text-muted-foreground/70"
+        style={{ aspectRatio: aspect }}
+      >
+        <ImageIcon className="size-6" strokeWidth={1.5} />
+        <span className="text-[10px] opacity-70">结果图已失效，可重新生成</span>
+      </div>
     );
   }
 
