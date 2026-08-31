@@ -41,15 +41,36 @@ async function callAigc(
     return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
   }
 
-  if (!res.ok) return { message: `内网生成服务返回 ${res.status}` };
+  if (!res.ok) {
+    // 非 200 时把响应体带出来，别让用户只看到一个状态码
+    const text = (await res.text().catch(() => "")).slice(0, 300);
+    return { message: `内网生成服务返回 ${res.status}${text ? `：${text}` : ""}` };
+  }
 
   const body = (await res.json().catch(() => null)) as AigcResponse | null;
   const url = body?.result?.content?.[0];
   if (body?.result?.status !== "success" || !url) {
     console.error("[generate] bad response", JSON.stringify(body));
-    return { message: "生成失败，内网服务未返回有效结果" };
+    const detail = errorDetailOf(body?.result?.error);
+    return { message: detail ? `生成失败：${detail}` : "生成失败，内网服务未返回有效结果" };
   }
   return { url };
+}
+
+/** 把内网返回的 result.error 提炼成一句人能读的话，透传给前端和流水表 */
+function errorDetailOf(error: unknown): string {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  if (typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    for (const key of ["message", "msg", "error", "detail", "reason"]) {
+      const value = record[key];
+      if (typeof value === "string" && value) return value;
+    }
+    const serialized = JSON.stringify(error);
+    return serialized === "{}" ? "" : serialized.slice(0, 300);
+  }
+  return String(error);
 }
 
 /** 记一条生成流水（成功失败都记），统计面板和成本核算用 */

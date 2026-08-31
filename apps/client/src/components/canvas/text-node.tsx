@@ -64,7 +64,7 @@ export function TextNode({ id, data, selected }: NodeProps) {
         className={cn(
           "size-full rounded-xl border bg-card p-3 shadow-sm",
           selected && "outline outline-1 outline-[#3b82f6]",
-          isNeighbor && "outline outline-2 outline-[#3b82f6]/80 outline-dashed",
+          isNeighbor && "shadow-[0_0_0_2px_#3b82f6,0_0_18px_4px_rgba(59,130,246,0.5)]",
         )}
         onDoubleClick={() => setEditing(true)}
       >

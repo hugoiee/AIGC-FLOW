@@ -95,7 +95,7 @@ export function MediaNode({ id, data, selected }: NodeProps) {
           "size-full overflow-hidden",
           // 未选中时完全没有外壳，画布上只看得到媒体本身
           selected && "outline outline-1 outline-[#3b82f6]",
-          isNeighbor && "outline outline-2 outline-[#3b82f6]/80 outline-dashed",
+          isNeighbor && "shadow-[0_0_0_2px_#3b82f6,0_0_18px_4px_rgba(59,130,246,0.5)]",
           (isAudio || isPlaceholder) && "rounded-md",
         )}
       >
