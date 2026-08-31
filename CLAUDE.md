@@ -3,12 +3,36 @@
 画布节点工作流，用于调用各种模型进行影视资产创作。
 
 当前进度：首页（项目列表）、画布编辑器（`/projects/[id]`，React Flow）、
-媒体上传（拖拽或按钮，图/视频/音频）已完成，`/debug` 是链路自检页。
+媒体上传（拖拽或按钮，图/视频/音频，经服务端转发到内网上传服务，
+不落本地盘）已完成，`/debug` 是链路自检页。
 画布操作：选择/移动双模式（V / H 切换）、框选、多选工具条
 （整理节点 / 创建编组 / 对齐 / 间距 / 批量下载）、编组与解组、双击改节点名。
 媒体节点只有右侧一个 source 端点，选中才显示。**编组暂不支持嵌套。**
 这块的完整决策记录和踩坑见 `docs/画布操作逻辑.md`。
-模型调用尚未开发，节点目前是纯展示的。
+图像生成节点（GPT Image 2 / Nano Banana 2 / Nano Banana Pro）和视频生成节点
+（Seedance 2.0 / 2.5，参考图模式 + 首尾帧模式）都已接入内网 `/aigc`：
+左侧 target 连参考素材（媒体节点或其他生成节点的结果，按图/视频/音频分流到
+image_list / video_list / audio_list），结果显示在节点上方，右侧 source 可被
+下游引用；`generating` 状态不落盘。版本/模式相关的参数收敛统一在 shared 的
+`clampVideoConfig`。**首尾帧模式的 mode 值是占位的 `first_last_frame`**，
+接口文档没写明，内网联调后改 `packages/shared/src/video-gen.ts` 一处即可。
+生成接口要求 req_from（设置面板里填），不填服务端直接拒绝。
+文本节点（Textarea）连给生成节点后在 prompt 里显示为徽章：prompt 存
+`{{text:<节点id>}}` token（数据契约，见 `packages/shared/src/text-node.ts`），
+输入框是 contentEditable（`prompt-editor.tsx`），发请求前按 token 位置替换成
+文本内容。连线增删与 token 同步的规则：新连线追加到末尾、断线移除、
+手动删掉徽章不补回（断线重连可重新插入）。
+连线约束在 `lib/connection.ts`：图像节点只收图/文本，视频节点收图/视频/音频/文本，
+生成节点的产出算对应种类资源。连线可以直接落在目标节点身上（不必碰左侧端点）。
+多选资源时选区右侧有浮动连线端点（`floating-connector.tsx`）：落到可接受节点上
+批量连线，落到空白或不能接受的节点上会在松手处弹节点选择菜单
+（`node-picker-menu.tsx`，不能连的类型禁用，选择后原地建节点并接线，期间虚线不消失）；
+右键画布空白也弹这个菜单（因此选择模式的平移只留中键，右键让给了菜单）。
+连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。
+每次转发 `/aigc` 都在 `generations` 表记一条流水（完整请求 JSON、状态、
+视频时长），右上角的数据统计面板（`stats-dialog.tsx`）汇总次数与视频总秒数
+（自动时长的不计入、单独计数），供成本核算；`GET /api/generations`。
+音频生成节点尚未开发。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
 
@@ -118,13 +142,19 @@ export type AppType = typeof app;
 - 浏览器只放行一个页面的第一个自动下载，之后的会弹窗让用户确认。批量下载就是
   逐个触发 + 让用户点一次「允许」，**不要为了绕过它去做服务端打包**。
 - 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
-  内网 IP 不进前端 bundle、凭据只在服务端填一处）。`UPLOAD_MODE=local|proxy`
-  就是这个模式的样板：没内网时同一个接口切成本地实现，前端一行不改。
+  内网 IP 不进前端 bundle、凭据只在服务端填一处）。上传就是这个模式的样板：
+  前端只调本服务的 `/api/uploads`，服务端转发到内网上传服务
+  （图/视频走 `/api/upload`，音频走 `/api/upload-media`，返回 `{ urls: [...] }`，
+  见 `docs/接口文档.md`）。内网根地址不在 .env 里，存 `settings` 表
+  （画布右上角设置面板可改，默认值在 `packages/shared/src/settings.ts`）。
 
 ## 下一步
 
 - 嵌套编组：目前选区含编组或组内节点时按钮置灰，要支持得处理多层坐标变换、
   递归解组、递归收集组内素材。
-- 模型调用适配层尚未引入，节点没有参数配置和执行能力。
+- 音频生成节点；图像生成的多张结果（n>1）与结果历史。
+- 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
+- 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
+  `{result:{content:[url],status:"success"}}`），把设置面板的生成地址指过去即可。
 
 按 `coding_new_feat` 五步法逐个功能推进。

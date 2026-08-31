@@ -4,6 +4,7 @@ import { AUDIO_NODE_SIZE, fitMediaSize, type MediaNodeData } from "@aigc-flow/sh
 import { Handle, type NodeProps, NodeResizer, Position, useReactFlow } from "@xyflow/react";
 import { CircleAlert, FileImage, FileVideo, Loader2, Music, Plus } from "lucide-react";
 import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "react";
+import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { NodeName } from "./node-name";
 
@@ -13,17 +14,16 @@ const KIND_ICON = { image: FileImage, video: FileVideo, audio: Music } as const;
 const ACCENT = "#3b82f6";
 
 /**
- * 唯一的连接点：浮在节点右外侧的圆形「+」，样式对齐
- * docs/Img/单右侧端点样式示意.png。
+ * 唯一的连接点：骑在节点右边缘垂直中心的圆形「+」。
  *
- * right 为负让它整个挪到节点外面 —— 覆在画面上会挡住素材本身。
- * 位置靠 React Flow 自带的 .react-flow__handle-right（translate + top:50%）居中，
- * 这里只覆盖 right 和外观。
+ * right: -10 让 20px 的圆一半在节点外 —— 完全悬空的话连线会看起来
+ * 从节点边缘出发、够不到端点。位置靠 React Flow 自带的
+ * .react-flow__handle-right（translate + top:50%）居中，这里只覆盖 right 和外观。
  */
 const SOURCE_HANDLE_STYLE: CSSProperties = {
   width: 20,
   height: 20,
-  right: -28,
+  right: -10,
   borderRadius: 9999,
   border: "1px solid var(--border)",
   backgroundColor: "var(--background)",
@@ -158,6 +158,12 @@ function MediaBody({
   media: MediaNodeData;
   onNaturalSize: (w: number, h: number) => void;
 }) {
+  // 素材地址加载失败（服务停了 / 文件被清 / 断网）时给占位符兜底，
+  // 否则 <img> 会渲染成破图标 + 一大段 alt 文字。url 变了就重试。
+  const [loadFailed, setLoadFailed] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
+  useEffect(() => setLoadFailed(false), [media.url]);
+
   if (media.status === "uploading") {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-2 rounded-md border border-dashed bg-muted/40 text-muted-foreground text-xs">
@@ -177,16 +183,25 @@ function MediaBody({
     );
   }
 
+  if (loadFailed) {
+    return <BrokenMediaPlaceholder media={media} />;
+  }
+
   if (media.kind === "image") {
     return (
       // biome-ignore lint/performance/noImgElement: 用户上传的任意图片，无需 next/image
       <img
-        src={media.url}
+        src={resizedImageUrl(media.url, CANVAS_WIDTH)}
         alt={media.label}
         draggable={false}
+        loading="lazy"
+        decoding="async"
         onLoad={(event: SyntheticEvent<HTMLImageElement>) =>
           onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
         }
+        onError={() => setLoadFailed(true)}
+        // 画布上渲染的是缩略版，双击才在新标签页看全尺寸原图
+        onDoubleClick={() => window.open(media.url, "_blank")}
         className="size-full select-none object-fill"
       />
     );
@@ -202,6 +217,7 @@ function MediaBody({
         onLoadedMetadata={(event: SyntheticEvent<HTMLVideoElement>) =>
           onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
         }
+        onError={() => setLoadFailed(true)}
         className="nodrag size-full object-fill"
       >
         <track kind="captions" />
@@ -216,7 +232,24 @@ function MediaBody({
         <span className="truncate">{media.label}</span>
       </span>
       {/* biome-ignore lint/a11y/useMediaCaption: 用户上传的音频，没有字幕轨 */}
-      <audio src={media.url} controls className="nodrag h-8 w-full" />
+      <audio
+        src={media.url}
+        controls
+        onError={() => setLoadFailed(true)}
+        className="nodrag h-8 w-full"
+      />
+    </div>
+  );
+}
+
+/** 素材地址打不开时的兜底占位：中性灰底 + 种类图标 + 文件名 */
+function BrokenMediaPlaceholder({ media }: { media: MediaNodeData }) {
+  const Icon = KIND_ICON[media.kind];
+  return (
+    <div className="flex size-full flex-col items-center justify-center gap-1.5 rounded-md bg-[#e6e6e6] px-3 text-center text-muted-foreground/70 dark:bg-muted">
+      <Icon className="size-6" strokeWidth={1.5} />
+      <span className="max-w-full truncate text-xs">{media.label}</span>
+      <span className="text-[10px] opacity-70">素材加载失败</span>
     </div>
   );
 }

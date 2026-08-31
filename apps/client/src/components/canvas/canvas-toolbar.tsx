@@ -1,10 +1,12 @@
 "use client";
 
 import type { Project } from "@aigc-flow/shared";
-import { ChevronLeft, Settings } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { ProjectName } from "@/components/canvas/project-name";
 import { SaveIndicator } from "@/components/canvas/save-indicator";
+import { SettingsDialog } from "@/components/settings-dialog";
+import { StatsDialog } from "@/components/stats-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -65,20 +67,9 @@ export function CanvasInfoGroup({
 export function CanvasActionGroup() {
   return (
     <div className={GROUP}>
+      <StatsDialog />
       <ThemeToggle />
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          {/* disabled 的按钮不派发鼠标事件，tooltip 收不到 hover，
-              所以套一层 span 承接 —— 占位阶段也要让人知道这是什么 */}
-          <span className="inline-flex">
-            <Button variant="ghost" size="icon" disabled aria-label="设置">
-              <Settings />
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">设置（暂未开放）</TooltipContent>
-      </Tooltip>
+      <SettingsDialog />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "@aigc-flow/shared";
 import type { Node, XYPosition } from "@xyflow/react";
 import { useCallback } from "react";
+import { toast } from "sonner";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -98,6 +99,9 @@ export function useMediaUpload({ onNodesCreated, onNodeSettled }: UseMediaUpload
         if (!node) return;
 
         void uploadOne(file).then((outcome) => {
+          if (!outcome.ok) {
+            toast.error(`「${file.name}」上传失败`, { description: outcome.error });
+          }
           onNodeSettled(
             node.id,
             outcome.ok

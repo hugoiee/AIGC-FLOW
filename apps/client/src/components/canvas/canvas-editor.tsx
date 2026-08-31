@@ -1,29 +1,39 @@
 "use client";
 
 import {
+  DEFAULT_IMAGE_GEN_DATA,
+  DEFAULT_TEXT_NODE_DATA,
+  DEFAULT_VIDEO_GEN_DATA,
   GROUP_NODE_TYPE,
+  IMAGE_GEN_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type Project,
   type ProjectGraph,
+  TEXT_NODE_HEIGHT,
+  TEXT_NODE_TYPE,
+  TEXT_NODE_WIDTH,
+  VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import {
   addEdge,
   Background,
   BackgroundVariant,
   type Connection,
+  ControlButton,
   Controls,
   type Edge,
   MiniMap,
   type Node,
   Panel,
-  Position,
   ReactFlow,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
+import { Map as MapIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { type DragEvent, useCallback, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,6 +41,7 @@ import { CanvasActionsProvider } from "@/hooks/use-canvas-actions";
 import { useGraphAutosave } from "@/hooks/use-graph-autosave";
 import { useCanvasShortcuts, useGraphHistory } from "@/hooks/use-graph-history";
 import { useMediaUpload } from "@/hooks/use-media-upload";
+import { canConnectNodes, sourceResourceOf, targetAcceptsOf } from "@/lib/connection";
 import { downloadableMedia, downloadMedia } from "@/lib/download";
 import {
   canGroup as canGroupNodes,
@@ -47,23 +58,58 @@ import {
   type SpacingMode,
   spaceNodes,
 } from "@/lib/layout";
+import { AnimatedEdge } from "./animated-edge";
 import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
+import { FloatingConnector, type FloatLine } from "./floating-connector";
 import { GroupNode } from "./group-node";
+import { ImageGenNode } from "./image-gen-node";
 import { MediaNode } from "./media-node";
-import { type CanvasMode, type NodeKind, NodePalette } from "./node-palette";
+import { type CanvasMode, NodePalette } from "./node-palette";
+import { NodePickerMenu, type NodePickerRequest, type PickerNodeType } from "./node-picker-menu";
 import { SelectionToolbar } from "./selection-toolbar";
+import { TextNode } from "./text-node";
+import { VideoGenNode } from "./video-gen-node";
 import "@xyflow/react/dist/style.css";
-
-const KIND_LABELS: Record<NodeKind, string> = {
-  input: "输入",
-  default: "处理",
-  output: "输出",
-};
 
 const PASTE_OFFSET = 40;
 
+/**
+ * 组一个新节点。文本节点要带初始尺寸（它可自由拉伸，尺寸随 graph 落盘），
+ * 其余类型由内容自适应。
+ */
+function buildCanvasNode(
+  type: string,
+  defaults: Record<string, unknown>,
+  position: { x: number; y: number },
+): Node {
+  const size =
+    type === TEXT_NODE_TYPE ? { width: TEXT_NODE_WIDTH, height: TEXT_NODE_HEIGHT } : null;
+  return {
+    id: crypto.randomUUID(),
+    type,
+    position,
+    data: { ...defaults },
+    ...(size ? { ...size, style: size } : {}),
+  };
+}
+
+/** 浮动连线的三次贝塞尔（屏幕坐标），弯度随水平距离走，和 React Flow 默认连线手感一致 */
+function floatLinePath({ from, to }: FloatLine): string {
+  const bend = Math.max(Math.abs(to.x - from.x) / 2, 40);
+  return `M ${from.x} ${from.y} C ${from.x + bend} ${from.y}, ${to.x - bend} ${to.y}, ${to.x} ${to.y}`;
+}
+
+// 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点和连线
+const EDGE_TYPES = { default: AnimatedEdge };
+
 // 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
-const NODE_TYPES = { [MEDIA_NODE_TYPE]: MediaNode, [GROUP_NODE_TYPE]: GroupNode };
+const NODE_TYPES = {
+  [MEDIA_NODE_TYPE]: MediaNode,
+  [GROUP_NODE_TYPE]: GroupNode,
+  [IMAGE_GEN_NODE_TYPE]: ImageGenNode,
+  [VIDEO_GEN_NODE_TYPE]: VideoGenNode,
+  [TEXT_NODE_TYPE]: TextNode,
+};
 
 type CanvasEditorProps = {
   project: Project;
@@ -85,7 +131,7 @@ export function CanvasEditor({
   const [mode, setMode] = useState<CanvasMode>("select");
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const { screenToFlowPosition, getViewport } = useReactFlow();
+  const { screenToFlowPosition, getViewport, getIntersectingNodes } = useReactFlow();
   // React Flow 的节点 / 控制条 / 小地图有自己一套 CSS 变量，不吃我们的 .dark，
   // 必须显式把主题传给它的 colorMode，否则暗色下节点是白底白字，完全看不见
   const { resolvedTheme } = useTheme();
@@ -125,40 +171,73 @@ export function CanvasEditor({
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (connection.source === connection.target) return;
+      const sourceNode = nodes.find((node) => node.id === connection.source);
+      const targetNode = nodes.find((node) => node.id === connection.target);
+      if (!sourceNode || !targetNode || !canConnectNodes(sourceNode, targetNode)) return;
+
       // 新状态必须在 updater 外面算：updater 里做副作用在 StrictMode 下会跑两次，
       // 历史栈会被塞进重复项，表现为「撤销要按两下才动一次」
-      const next = addEdge(connection, edges);
+      let next = addEdge(connection, edges);
+
+      // 批量连线：起手的节点在多选选区里时，选区内其他能连的资源节点一起连到
+      // 同一目标（连线约束见 lib/connection.ts）。addEdge 会跳过完全相同的连线。
+      const selected = nodes.filter((node) => node.selected);
+      if (selected.some((node) => node.id === connection.source)) {
+        for (const node of selected) {
+          if (node.id === connection.source || node.id === connection.target) continue;
+          if (!canConnectNodes(node, targetNode)) continue;
+          next = addEdge(
+            {
+              source: node.id,
+              sourceHandle: null,
+              target: connection.target,
+              targetHandle: connection.targetHandle,
+            },
+            next,
+          );
+        }
+      }
+
       setEdges(next);
       commitNow(nodes, next);
     },
     [setEdges, commitNow, nodes, edges],
   );
 
-  const handleAddNode = useCallback(
-    (kind: NodeKind) => {
+  /** 生成类节点：默认落在视口中心，也可指定画布坐标（节点选择菜单用） */
+  const addGenNode = useCallback(
+    (type: string, defaults: Record<string, unknown>, position?: { x: number; y: number }) => {
       const rect = wrapperRef.current?.getBoundingClientRect();
       const center = rect
         ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
         : { x: 0, y: 0 };
 
-      const next: Node[] = [
-        ...nodes,
-        {
-          id: crypto.randomUUID(),
-          type: kind,
-          position: {
-            x: center.x - 75 + (Math.random() - 0.5) * 80,
-            y: center.y - 20 + (Math.random() - 0.5) * 80,
-          },
-          data: { label: `${KIND_LABELS[kind]}节点` },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-        },
-      ];
+      const node = buildCanvasNode(
+        type,
+        defaults,
+        position ?? { x: center.x - 267, y: center.y - 240 },
+      );
+      const next: Node[] = [...nodes, node];
       setNodes(next);
       commitNow(next, edges);
+      return node;
     },
     [screenToFlowPosition, setNodes, commitNow, nodes, edges],
+  );
+
+  const handleAddImageGen = useCallback(
+    () =>
+      addGenNode(IMAGE_GEN_NODE_TYPE, DEFAULT_IMAGE_GEN_DATA as unknown as Record<string, unknown>),
+    [addGenNode],
+  );
+  const handleAddVideoGen = useCallback(
+    () =>
+      addGenNode(VIDEO_GEN_NODE_TYPE, DEFAULT_VIDEO_GEN_DATA as unknown as Record<string, unknown>),
+    [addGenNode],
+  );
+  const handleAddText = useCallback(
+    () => addGenNode(TEXT_NODE_TYPE, DEFAULT_TEXT_NODE_DATA as unknown as Record<string, unknown>),
+    [addGenNode],
   );
 
   /**
@@ -177,11 +256,143 @@ export function CanvasEditor({
     [setNodes, commitNow],
   );
 
-  const canvasActions = useMemo(() => ({ renameNode }), [renameNode]);
+  // 单击节点才记为 active（框选不触发 onNodeClick），图像生成节点据此决定是否展开菜单
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+
+  // 浮动端点拖出的连线（屏幕坐标）与节点选择菜单。弹菜单期间连线保持显示
+  const [floatLine, setFloatLine] = useState<FloatLine | null>(null);
+  const [picker, setPicker] = useState<NodePickerRequest | null>(null);
+
+  // 拖线悬停中的可放置目标。只在目标能接受当前连线时设值，节点据此播动画
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // 左下角缩略图默认关闭，由画布控制条上的开关控制
+  const [showMiniMap, setShowMiniMap] = useState(false);
+
+  /** 拖线过程中按悬停位置刷新可放置目标：sources 里至少一个能连才算 */
+  const updateDropTarget = useCallback(
+    (point: { x: number; y: number }, sources: Node[]) => {
+      const flow = screenToFlowPosition(point);
+      const target = getIntersectingNodes({ x: flow.x, y: flow.y, width: 1, height: 1 }).find(
+        (node) => targetAcceptsOf(node.type) !== null,
+      );
+      const ok =
+        target && sources.some((node) => node.id !== target.id && canConnectNodes(node, target));
+      setDropTargetId(ok && target ? target.id : null);
+    },
+    [screenToFlowPosition, getIntersectingNodes],
+  );
+
+  /** 浮动端点拖动中：更新虚线 + 刷新可放置目标 */
+  const handleFloatDragLine = useCallback(
+    (line: FloatLine) => {
+      setFloatLine(line);
+      updateDropTarget(
+        line.to,
+        nodesRef.current.filter((node) => node.selected && sourceResourceOf(node) !== null),
+      );
+    },
+    [updateDropTarget],
+  );
+
+  // 普通端点拖线时挂在 window 上的 move 监听，onConnectEnd 时卸掉
+  const connectDragCleanupRef = useRef<(() => void) | null>(null);
+
+  /** 选区里能往外连的资源节点（媒体 / 生成结果 / 文本） */
+  const selectedResourceIds = useMemo(
+    () =>
+      nodes
+        .filter((node) => node.selected && sourceResourceOf(node) !== null)
+        .map((node) => node.id),
+    [nodes],
+  );
+
+  /** 浮动端点松手：落在能接受的节点上就批量连线，否则原地弹节点选择菜单 */
+  const handleFloatingDrop = useCallback(
+    (point: { x: number; y: number }) => {
+      setDropTargetId(null);
+      const flow = screenToFlowPosition(point);
+      const sources = nodesRef.current.filter(
+        (node) => node.selected && sourceResourceOf(node) !== null,
+      );
+
+      const target = getIntersectingNodes({ x: flow.x, y: flow.y, width: 1, height: 1 }).find(
+        (node) => targetAcceptsOf(node.type) !== null,
+      );
+      if (target) {
+        const connectable = sources.filter(
+          (node) => node.id !== target.id && canConnectNodes(node, target),
+        );
+        if (connectable.length > 0) {
+          let next = edgesRef.current;
+          for (const node of connectable) {
+            next = addEdge(
+              { source: node.id, sourceHandle: null, target: target.id, targetHandle: null },
+              next,
+            );
+          }
+          setEdges(next);
+          commitNow(nodesRef.current, next);
+          setFloatLine(null);
+          return;
+        }
+      }
+
+      // 落在空白或目标不能接受选区资源：弹菜单让用户当场造一个能接的节点
+      setPicker({ screen: point, flow, sourceIds: sources.map((node) => node.id) });
+    },
+    [screenToFlowPosition, getIntersectingNodes, setEdges, commitNow],
+  );
+
+  /** 菜单选择：创建对应节点并把能连的源都连过来，整个过程连线不消失 */
+  const handlePickerPick = useCallback(
+    (type: PickerNodeType) => {
+      if (!picker) return;
+      const defaults =
+        type === IMAGE_GEN_NODE_TYPE
+          ? DEFAULT_IMAGE_GEN_DATA
+          : type === VIDEO_GEN_NODE_TYPE
+            ? DEFAULT_VIDEO_GEN_DATA
+            : DEFAULT_TEXT_NODE_DATA;
+
+      const node = buildCanvasNode(
+        type,
+        defaults as unknown as Record<string, unknown>,
+        picker.flow,
+      );
+      let nextEdges = edgesRef.current;
+      for (const id of picker.sourceIds) {
+        const source = nodesRef.current.find((item) => item.id === id);
+        if (source && canConnectNodes(source, node)) {
+          nextEdges = addEdge(
+            { source: id, sourceHandle: null, target: node.id, targetHandle: null },
+            nextEdges,
+          );
+        }
+      }
+      const nextNodes = [...nodesRef.current, node];
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commitNow(nextNodes, nextEdges);
+      setPicker(null);
+      setFloatLine(null);
+    },
+    [picker, setNodes, setEdges, commitNow],
+  );
+
+  const handlePickerClose = useCallback(() => {
+    setPicker(null);
+    setFloatLine(null);
+  }, []);
 
   const selectedIds = useMemo(
     () => nodes.filter((node) => node.selected).map((node) => node.id),
     [nodes],
+  );
+
+  const canvasActions = useMemo(
+    () => ({ renameNode, activeNodeId, dropTargetId }),
+    [renameNode, activeNodeId, dropTargetId],
   );
 
   /** 排布类操作统一走这里：算出新数组 → setNodes → 整体入历史栈，一次 ⌘Z 全退回 */
@@ -378,17 +589,70 @@ export function CanvasEditor({
             onNodeDragStop={() => commitNow(nodes, edges)}
             onNodesDelete={() => commitNow(nodes, edges)}
             onEdgesDelete={() => commitNow(nodes, edges)}
+            onConnectStart={(_, { nodeId, handleType }) => {
+              // 普通端点拖线时也做「可放置」高亮：move 里按悬停位置刷新目标
+              if (handleType !== "source" || !nodeId) return;
+              const fromNode = nodesRef.current.find((node) => node.id === nodeId);
+              if (!fromNode) return;
+              const handleMove = (move: PointerEvent) =>
+                updateDropTarget({ x: move.clientX, y: move.clientY }, [fromNode]);
+              window.addEventListener("pointermove", handleMove);
+              connectDragCleanupRef.current = () =>
+                window.removeEventListener("pointermove", handleMove);
+            }}
+            onConnectEnd={(event, connectionState) => {
+              connectDragCleanupRef.current?.();
+              connectDragCleanupRef.current = null;
+              setDropTargetId(null);
+              // 拖普通端点的线松手在节点身上（没落在 target 端点上）也算连上
+              if (connectionState.isValid) return;
+              const fromNode = connectionState.fromNode;
+              if (!fromNode || connectionState.fromHandle?.type !== "source") return;
+              const point = "changedTouches" in event ? event.changedTouches[0] : event;
+              if (!point) return;
+              const flow = screenToFlowPosition({ x: point.clientX, y: point.clientY });
+              const target = getIntersectingNodes({
+                x: flow.x,
+                y: flow.y,
+                width: 1,
+                height: 1,
+              }).find((node) => node.id !== fromNode.id && canConnectNodes(fromNode, node));
+              if (target) {
+                handleConnect({
+                  source: fromNode.id,
+                  sourceHandle: null,
+                  target: target.id,
+                  targetHandle: null,
+                });
+              }
+            }}
+            onPaneContextMenu={(event) => {
+              event.preventDefault();
+              const point = { x: event.clientX, y: event.clientY };
+              setPicker({ screen: point, flow: screenToFlowPosition(point), sourceIds: [] });
+            }}
+            isValidConnection={(connection) => {
+              const source = nodesRef.current.find((node) => node.id === connection.source);
+              const target = nodesRef.current.find((node) => node.id === connection.target);
+              return !!source && !!target && canConnectNodes(source, target);
+            }}
+            onNodeClick={(_, node) => setActiveNodeId(node.id)}
+            onPaneClick={() => setActiveNodeId(null)}
+            onSelectionStart={() => setActiveNodeId(null)}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
             colorMode={resolvedTheme === "dark" ? "dark" : "light"}
             defaultViewport={initialViewport}
             minZoom={0.2}
             maxZoom={2}
             deleteKeyCode={["Backspace", "Delete"]}
             multiSelectionKeyCode={["Meta", "Shift"]}
-            // 选择模式：左键框选，平移让给中键 / 右键，节点可拖
+            // 选择模式：左键框选，平移让给中键（右键留给节点选择菜单），节点可拖
             // 移动模式：左键平移，节点不可拖（拖节点也是平移），语义对齐 Figma 的抓手
-            panOnDrag={isMove ? true : [1, 2]}
+            panOnDrag={isMove ? true : [1]}
             selectionOnDrag={!isMove}
+            // 框选碰到节点就算选中，不要求整个框住
+            selectionMode={SelectionMode.Partial}
             nodesDraggable={!isMove}
             // 移动模式下必须连 selectable 一起关掉：只关 draggable 的话，
             // 节点本身和多选时那层 nodesselection-rect 仍然吃指针事件，
@@ -397,6 +661,13 @@ export function CanvasEditor({
             elementsSelectable={!isMove}
           >
             <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+
+            <FloatingConnector
+              selectedIds={selectedIds}
+              visible={!isMove && selectedResourceIds.length >= 2}
+              onDragLine={handleFloatDragLine}
+              onDrop={handleFloatingDrop}
+            />
 
             <SelectionToolbar
               selectedIds={selectedIds}
@@ -429,7 +700,9 @@ export function CanvasEditor({
               <NodePalette
                 mode={mode}
                 onModeChange={setMode}
-                onAdd={handleAddNode}
+                onAddImageGen={handleAddImageGen}
+                onAddVideoGen={handleAddVideoGen}
+                onAddText={handleAddText}
                 onPickFiles={handlePickFiles}
                 canUndo={history.canUndo}
                 canRedo={history.canRedo}
@@ -438,9 +711,45 @@ export function CanvasEditor({
               />
             </Panel>
 
-            <Controls />
-            <MiniMap pannable zoomable />
+            <Controls orientation="horizontal" position="bottom-left">
+              <ControlButton
+                onClick={() => setShowMiniMap((value) => !value)}
+                title={showMiniMap ? "隐藏缩略图" : "显示缩略图"}
+              >
+                <MapIcon />
+              </ControlButton>
+            </Controls>
+            {/* marginBottom 抬到水平控制条上方，两个面板同在左下角 */}
+            {showMiniMap && (
+              <MiniMap pannable zoomable position="bottom-left" style={{ marginBottom: 48 }} />
+            )}
           </ReactFlow>
+
+          {/* 浮动端点拖出的连线。屏幕坐标直接画在画布容器上层，弹菜单期间保持 */}
+          {floatLine && (
+            <svg
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-40 size-full overflow-visible"
+            >
+              <path
+                d={floatLinePath(floatLine)}
+                fill="none"
+                stroke="#3b82f6"
+                strokeWidth={1.6}
+                strokeDasharray="6 4"
+              />
+              <circle cx={floatLine.to.x} cy={floatLine.to.y} r={4} fill="#3b82f6" />
+            </svg>
+          )}
+
+          {picker && (
+            <NodePickerMenu
+              request={picker}
+              nodes={nodes}
+              onPick={handlePickerPick}
+              onClose={handlePickerClose}
+            />
+          )}
         </div>
       </CanvasActionsProvider>
     </TooltipProvider>

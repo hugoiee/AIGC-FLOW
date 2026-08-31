@@ -2,9 +2,12 @@ import {
   type CanvasEdge,
   type CanvasNode,
   GROUP_NODE_TYPE,
+  IMAGE_GEN_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type ProjectGraph,
+  TEXT_NODE_TYPE,
+  VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
 
@@ -13,8 +16,8 @@ import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
  * 存下来也没意义：刷新后 File 对象已经没了，既重试不了也拿不到 URL，
  * 只会留下一个永远"上传中"的死节点。
  */
-/** 尺寸要落盘的节点类型：这两种的尺寸是用户定的，不是内容撑出来的 */
-const SIZED_NODE_TYPES = new Set<string>([MEDIA_NODE_TYPE, GROUP_NODE_TYPE]);
+/** 尺寸要落盘的节点类型：这几种的尺寸是用户定的，不是内容撑出来的 */
+const SIZED_NODE_TYPES = new Set<string>([MEDIA_NODE_TYPE, GROUP_NODE_TYPE, TEXT_NODE_TYPE]);
 
 function isPersistable(node: Node): boolean {
   if (node.type !== MEDIA_NODE_TYPE) return true;
@@ -36,7 +39,7 @@ export function toPersistedGraph(nodes: Node[], edges: Edge[], viewport: Viewpor
         id: node.id,
         type: node.type,
         position: node.position,
-        data: { label: String(node.data?.label ?? "未命名节点"), ...node.data },
+        data: persistedData(node),
         // 只落媒体节点和编组的尺寸。普通节点的 width/height 是 React Flow 量出来的，
         // 存下来会让"内容自适应"变成"锁死在上次量到的值"
         // 锁比例拖拽会算出 632.888…/112.5 这种小数，落库前取整。
@@ -117,6 +120,24 @@ export function fromPersistedGraph(graph: ProjectGraph): { nodes: Node[]; edges:
         type: edge.type,
       })),
   };
+}
+
+/** 「生成中」是运行时状态的节点类型，落盘一律回退成 idle */
+const GENERATING_NODE_TYPES = new Set<string>([IMAGE_GEN_NODE_TYPE, VIDEO_GEN_NODE_TYPE]);
+
+/**
+ * 生成类节点的「生成中」是运行时状态，落盘一律回退成 idle ——
+ * 刷新后请求已经断了，存下来只会是一个永远转圈的死节点。
+ */
+function persistedData(node: Node): CanvasNode["data"] {
+  const data: CanvasNode["data"] = {
+    ...node.data,
+    label: String(node.data?.label ?? "未命名节点"),
+  };
+  if (GENERATING_NODE_TYPES.has(node.type ?? "") && data.status === "generating") {
+    return { ...data, status: "idle" };
+  }
+  return data;
 }
 
 /** 父节点排前、子节点排后。只有一层父子，不用做拓扑排序 */

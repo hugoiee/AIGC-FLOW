@@ -1,10 +1,12 @@
-import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { corsOrigins, env } from "./env";
+import { corsOrigins } from "./env";
+import { generateRoute } from "./routes/generate";
+import { generationsRoute } from "./routes/generations";
 import { healthRoute } from "./routes/health";
 import { projectsRoute } from "./routes/projects";
+import { settingsRoute } from "./routes/settings";
 import { uploadsRoute } from "./routes/uploads";
 
 /**
@@ -16,15 +18,10 @@ const app = new Hono()
   .use("/api/*", cors({ origin: corsOrigins, credentials: true }))
   .route("/api/health", healthRoute)
   .route("/api/projects", projectsRoute)
+  .route("/api/settings", settingsRoute)
   .route("/api/uploads", uploadsRoute)
-  // local 模式落盘的文件由本服务托管；proxy 模式下这条路由不会被用到
-  .use(
-    "/uploads/*",
-    serveStatic({
-      root: env.UPLOAD_DIR.replace(/^\.\//, ""),
-      rewriteRequestPath: (path) => path.replace(/^\/uploads/, ""),
-    }),
-  );
+  .route("/api/generate", generateRoute)
+  .route("/api/generations", generationsRoute);
 
 app.onError((err, c) => {
   console.error("[server error]", err);

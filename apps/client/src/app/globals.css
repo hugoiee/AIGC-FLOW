@@ -160,6 +160,12 @@
   cursor: default;
 }
 
+/* 浅色主题下画布底色压暗一档（#F5F5F5），纯白太刺眼。
+   React Flow 按 colorMode 给根元素挂 .light / .dark，深色不动。 */
+.react-flow.light {
+  background-color: #f5f5f5;
+}
+
 /* 编组用的是自定义组件（group-node.tsx），框和底色都自己画。
    React Flow 会给 group 类型套一层默认样式（白底 + 1px 边框 + 10px padding），
    不清掉的话会在自定义的虚线框外面再透出一圈白盒子，padding 还会把内容顶偏。

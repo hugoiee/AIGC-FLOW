@@ -1,6 +1,15 @@
 "use client";
 
-import { CircleDot, Hand, LogIn, LogOut, MousePointer2, Redo2, Undo2, Upload } from "lucide-react";
+import {
+  Clapperboard,
+  Hand,
+  MousePointer2,
+  Redo2,
+  Type,
+  Undo2,
+  Upload,
+  WandSparkles,
+} from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -18,26 +27,15 @@ export const CANVAS_MODES = [
 
 export type CanvasMode = (typeof CANVAS_MODES)[number]["mode"];
 
-/**
- * 可添加的节点种类。用的是 React Flow 内置的三种类型，
- * 差别只在连接点：input 只有出口，output 只有入口，default 两头都有。
- * 真实的 AIGC 语义节点（文生图 / 图生视频…）留到接模型调用时再做。
- */
-export const NODE_KINDS = [
-  { type: "input", label: "输入", icon: LogIn, hint: "流程起点，只有出口" },
-  { type: "default", label: "处理", icon: CircleDot, hint: "中间步骤，两头都能连" },
-  { type: "output", label: "输出", icon: LogOut, hint: "流程终点，只有入口" },
-] as const;
-
-export type NodeKind = (typeof NODE_KINDS)[number]["type"];
-
 /** 文件选择框接受的类型，和服务端 mediaKindOf 的判断保持一致 */
 const ACCEPT = "image/*,video/*,audio/*";
 
 type NodePaletteProps = {
   mode: CanvasMode;
   onModeChange: (mode: CanvasMode) => void;
-  onAdd: (kind: NodeKind) => void;
+  onAddImageGen: () => void;
+  onAddVideoGen: () => void;
+  onAddText: () => void;
   onPickFiles: (files: File[]) => void;
   canUndo: boolean;
   canRedo: boolean;
@@ -48,7 +46,9 @@ type NodePaletteProps = {
 export function NodePalette({
   mode,
   onModeChange,
-  onAdd,
+  onAddImageGen,
+  onAddVideoGen,
+  onAddText,
   onPickFiles,
   canUndo,
   canRedo,
@@ -60,29 +60,6 @@ export function NodePalette({
   return (
     <div className="flex items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-lg backdrop-blur-sm">
       <ModeToggle mode={mode} onModeChange={onModeChange} />
-
-      <Separator orientation="vertical" className="!h-5 mx-1" />
-
-      {NODE_KINDS.map(({ type, label, icon: Icon, hint }) => (
-        <Tooltip key={type}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onAdd(type)}
-              aria-label={`添加${label}节点`}
-            >
-              <Icon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="font-medium">添加{label}节点</p>
-            <p className="opacity-75">{hint}</p>
-          </TooltipContent>
-        </Tooltip>
-      ))}
-
-      <Separator orientation="vertical" className="!h-5 mx-1" />
 
       <Tooltip>
         <TooltipTrigger asChild>
@@ -114,7 +91,45 @@ export function NodePalette({
         }}
       />
 
-      <Separator orientation="vertical" className="!h-5 mx-1" />
+      <Separator orientation="vertical" className="!h-5 mx-1 self-center" />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddText} aria-label="添加文本节点">
+            <Type />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">文本</p>
+          <p className="opacity-75">提示词片段，连给生成节点按位置插入</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddImageGen} aria-label="添加图像生成节点">
+            <WandSparkles />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">图像生成</p>
+          <p className="opacity-75">左侧连参考图，填提示词调模型出图</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddVideoGen} aria-label="添加视频生成节点">
+            <Clapperboard />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">视频生成</p>
+          <p className="opacity-75">连参考图 / 视频 / 音频，seedance 出片</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="!h-5 mx-1 self-center" />
 
       <Tooltip>
         <TooltipTrigger asChild>
