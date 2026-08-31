@@ -16,8 +16,9 @@ export const DEFAULT_TEXT_NODE_DATA: TextNodeData = {
   text: "",
 };
 
-/** 文本节点的画布宽度 */
+/** 文本节点的初始尺寸，之后可在画布上自由拉伸（尺寸会落盘） */
 export const TEXT_NODE_WIDTH = 320;
+export const TEXT_NODE_HEIGHT = 140;
 
 /**
  * prompt 里的文本节点占位 token。存进 graph JSON，是数据契约的一部分：

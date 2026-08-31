@@ -6,6 +6,7 @@ import {
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type ProjectGraph,
+  TEXT_NODE_TYPE,
   VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
@@ -15,8 +16,8 @@ import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
  * 存下来也没意义：刷新后 File 对象已经没了，既重试不了也拿不到 URL，
  * 只会留下一个永远"上传中"的死节点。
  */
-/** 尺寸要落盘的节点类型：这两种的尺寸是用户定的，不是内容撑出来的 */
-const SIZED_NODE_TYPES = new Set<string>([MEDIA_NODE_TYPE, GROUP_NODE_TYPE]);
+/** 尺寸要落盘的节点类型：这几种的尺寸是用户定的，不是内容撑出来的 */
+const SIZED_NODE_TYPES = new Set<string>([MEDIA_NODE_TYPE, GROUP_NODE_TYPE, TEXT_NODE_TYPE]);
 
 function isPersistable(node: Node): boolean {
   if (node.type !== MEDIA_NODE_TYPE) return true;

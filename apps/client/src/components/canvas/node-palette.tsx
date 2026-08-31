@@ -61,46 +61,6 @@ export function NodePalette({
     <div className="flex items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-lg backdrop-blur-sm">
       <ModeToggle mode={mode} onModeChange={onModeChange} />
 
-      <Separator orientation="vertical" className="!h-5 mx-1" />
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" onClick={onAddImageGen} aria-label="添加图像生成节点">
-            <WandSparkles />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <p className="font-medium">图像生成</p>
-          <p className="opacity-75">左侧连参考图，填提示词调模型出图</p>
-        </TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" onClick={onAddVideoGen} aria-label="添加视频生成节点">
-            <Clapperboard />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <p className="font-medium">视频生成</p>
-          <p className="opacity-75">连参考图 / 视频 / 音频，seedance 出片</p>
-        </TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" onClick={onAddText} aria-label="添加文本节点">
-            <Type />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <p className="font-medium">文本</p>
-          <p className="opacity-75">提示词片段，连给生成节点按位置插入</p>
-        </TooltipContent>
-      </Tooltip>
-
-      <Separator orientation="vertical" className="!h-5 mx-1" />
-
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -131,7 +91,45 @@ export function NodePalette({
         }}
       />
 
-      <Separator orientation="vertical" className="!h-5 mx-1" />
+      <Separator orientation="vertical" className="!h-5 mx-1 self-center" />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddText} aria-label="添加文本节点">
+            <Type />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">文本</p>
+          <p className="opacity-75">提示词片段，连给生成节点按位置插入</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddImageGen} aria-label="添加图像生成节点">
+            <WandSparkles />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">图像生成</p>
+          <p className="opacity-75">左侧连参考图，填提示词调模型出图</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddVideoGen} aria-label="添加视频生成节点">
+            <Clapperboard />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">视频生成</p>
+          <p className="opacity-75">连参考图 / 视频 / 音频，seedance 出片</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="!h-5 mx-1 self-center" />
 
       <Tooltip>
         <TooltipTrigger asChild>

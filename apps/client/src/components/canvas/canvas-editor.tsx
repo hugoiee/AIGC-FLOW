@@ -10,7 +10,9 @@ import {
   type MediaNodeData,
   type Project,
   type ProjectGraph,
+  TEXT_NODE_HEIGHT,
   TEXT_NODE_TYPE,
+  TEXT_NODE_WIDTH,
   VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import {
@@ -18,6 +20,7 @@ import {
   Background,
   BackgroundVariant,
   type Connection,
+  ControlButton,
   Controls,
   type Edge,
   MiniMap,
@@ -30,6 +33,7 @@ import {
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
+import { Map as MapIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { type DragEvent, useCallback, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -68,6 +72,26 @@ import { VideoGenNode } from "./video-gen-node";
 import "@xyflow/react/dist/style.css";
 
 const PASTE_OFFSET = 40;
+
+/**
+ * 组一个新节点。文本节点要带初始尺寸（它可自由拉伸，尺寸随 graph 落盘），
+ * 其余类型由内容自适应。
+ */
+function buildCanvasNode(
+  type: string,
+  defaults: Record<string, unknown>,
+  position: { x: number; y: number },
+): Node {
+  const size =
+    type === TEXT_NODE_TYPE ? { width: TEXT_NODE_WIDTH, height: TEXT_NODE_HEIGHT } : null;
+  return {
+    id: crypto.randomUUID(),
+    type,
+    position,
+    data: { ...defaults },
+    ...(size ? { ...size, style: size } : {}),
+  };
+}
 
 /** 浮动连线的三次贝塞尔（屏幕坐标），弯度随水平距离走，和 React Flow 默认连线手感一致 */
 function floatLinePath({ from, to }: FloatLine): string {
@@ -188,12 +212,11 @@ export function CanvasEditor({
         ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
         : { x: 0, y: 0 };
 
-      const node: Node = {
-        id: crypto.randomUUID(),
+      const node = buildCanvasNode(
         type,
-        position: position ?? { x: center.x - 267, y: center.y - 240 },
-        data: { ...defaults },
-      };
+        defaults,
+        position ?? { x: center.x - 267, y: center.y - 240 },
+      );
       const next: Node[] = [...nodes, node];
       setNodes(next);
       commitNow(next, edges);
@@ -242,6 +265,9 @@ export function CanvasEditor({
 
   // 拖线悬停中的可放置目标。只在目标能接受当前连线时设值，节点据此播动画
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // 左下角缩略图默认关闭，由画布控制条上的开关控制
+  const [showMiniMap, setShowMiniMap] = useState(false);
 
   /** 拖线过程中按悬停位置刷新可放置目标：sources 里至少一个能连才算 */
   const updateDropTarget = useCallback(
@@ -329,12 +355,11 @@ export function CanvasEditor({
             ? DEFAULT_VIDEO_GEN_DATA
             : DEFAULT_TEXT_NODE_DATA;
 
-      const node: Node = {
-        id: crypto.randomUUID(),
+      const node = buildCanvasNode(
         type,
-        position: picker.flow,
-        data: { ...defaults } as unknown as Record<string, unknown>,
-      };
+        defaults as unknown as Record<string, unknown>,
+        picker.flow,
+      );
       let nextEdges = edgesRef.current;
       for (const id of picker.sourceIds) {
         const source = nodesRef.current.find((item) => item.id === id);
@@ -686,8 +711,18 @@ export function CanvasEditor({
               />
             </Panel>
 
-            <Controls />
-            <MiniMap pannable zoomable />
+            <Controls orientation="horizontal" position="bottom-left">
+              <ControlButton
+                onClick={() => setShowMiniMap((value) => !value)}
+                title={showMiniMap ? "隐藏缩略图" : "显示缩略图"}
+              >
+                <MapIcon />
+              </ControlButton>
+            </Controls>
+            {/* marginBottom 抬到水平控制条上方，两个面板同在左下角 */}
+            {showMiniMap && (
+              <MiniMap pannable zoomable position="bottom-left" style={{ marginBottom: 48 }} />
+            )}
           </ReactFlow>
 
           {/* 浮动端点拖出的连线。屏幕坐标直接画在画布容器上层，弹菜单期间保持 */}

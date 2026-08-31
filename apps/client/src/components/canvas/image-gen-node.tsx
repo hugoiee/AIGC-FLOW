@@ -27,6 +27,7 @@ import {
 import { ChevronDown, CircleAlert, ImageIcon, Loader2, Plus, WandSparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -114,16 +115,16 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
 
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { message?: string } | null;
-        updateNodeData(id, {
-          status: "error",
-          error: body?.message ?? `生成失败（${res.status}）`,
-        });
+        const message = body?.message ?? `生成失败（${res.status}）`;
+        toast.error("图像生成失败", { description: message });
+        updateNodeData(id, { status: "error", error: message });
         return;
       }
 
       const { url } = (await res.json()) as { url: string };
       updateNodeData(id, { status: "ready", resultUrl: url, error: undefined });
     } catch {
+      toast.error("图像生成失败", { description: "连不上服务，确认 server 已启动" });
       updateNodeData(id, { status: "error", error: "连不上服务，确认 server 已启动" });
     }
   }
