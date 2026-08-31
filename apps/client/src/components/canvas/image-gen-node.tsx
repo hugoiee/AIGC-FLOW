@@ -87,9 +87,14 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
   const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
-  const referenceUrls = sources
-    .map((node) => referenceUrlOf(node))
-    .filter((url): url is string => url !== null);
+  // id 是源节点 id：同一张图可以连入多次，chips 的 React key 必须用它而不是 url
+  const referenceItems = sources
+    .map((node) => {
+      const url = node ? referenceUrlOf(node) : null;
+      return node && url ? { id: node.id, url } : null;
+    })
+    .filter((item): item is { id: string; url: string } => item !== null);
+  const referenceUrls = referenceItems.map((item) => item.url);
 
   const generating = gen.status === "generating";
 
@@ -196,7 +201,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
         {showMenu && (
           <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
-              <ReferenceChips urls={referenceUrls} />
+              <ReferenceChips items={referenceItems} />
 
               <PromptEditor
                 value={gen.prompt}
@@ -298,13 +303,13 @@ function ResultArea({ gen, aspect }: { gen: ImageGenNodeData; aspect: number }) 
 }
 
 /** 参考图横排：已连接的缩略图（上限 16），未满时只补一个占位示例格 */
-function ReferenceChips({ urls }: { urls: string[] }) {
-  const shown = urls.slice(0, MAX_REFERENCE_IMAGES);
+function ReferenceChips({ items }: { items: Array<{ id: string; url: string }> }) {
+  const shown = items.slice(0, MAX_REFERENCE_IMAGES);
 
   return (
     <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
-      {shown.map((url) => (
-        <div key={url} className="h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border">
+      {shown.map(({ id, url }) => (
+        <div key={id} className="h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border">
           {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
           <img
             src={resizedImageUrl(url, THUMB_WIDTH)}

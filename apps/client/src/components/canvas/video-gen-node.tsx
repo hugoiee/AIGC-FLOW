@@ -60,24 +60,35 @@ import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node
 import { NodeName } from "./node-name";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
-type ReferenceMedia = { kind: MediaKind; url: string };
+/** id 是源节点 id：同一张图可以连入多次，React key 必须用它而不是 url */
+type ReferenceMedia = { id: string; kind: MediaKind; url: string };
 
 /**
  * 从上游节点里取出参考素材及其种类：媒体节点（图 / 视频 / 音频）、
  * 图像生成节点的结果图、视频生成节点的结果视频，都能作为参考。
  */
-function referenceMediaOf(node: { type?: string; data: unknown }): ReferenceMedia | null {
+function referenceMediaOf(node: {
+  id: string;
+  type?: string;
+  data: unknown;
+}): ReferenceMedia | null {
   if (node.type === MEDIA_NODE_TYPE) {
     const media = node.data as MediaNodeData;
-    return media.status === "ready" && media.url ? { kind: media.kind, url: media.url } : null;
+    return media.status === "ready" && media.url
+      ? { id: node.id, kind: media.kind, url: media.url }
+      : null;
   }
   if (node.type === IMAGE_GEN_NODE_TYPE) {
     const gen = node.data as ImageGenNodeData;
-    return gen.status === "ready" && gen.resultUrl ? { kind: "image", url: gen.resultUrl } : null;
+    return gen.status === "ready" && gen.resultUrl
+      ? { id: node.id, kind: "image", url: gen.resultUrl }
+      : null;
   }
   if (node.type === VIDEO_GEN_NODE_TYPE) {
     const gen = node.data as VideoGenNodeData;
-    return gen.status === "ready" && gen.resultUrl ? { kind: "video", url: gen.resultUrl } : null;
+    return gen.status === "ready" && gen.resultUrl
+      ? { id: node.id, kind: "video", url: gen.resultUrl }
+      : null;
   }
   return null;
 }
@@ -308,17 +319,76 @@ function ResultArea({ gen, aspect }: { gen: VideoGenNodeData; aspect: number }) 
 
 const CHIP_ICON = { image: ImageIcon, video: FileVideo, audio: Music } as const;
 
+/** 已连素材的实体格：图片缩略图，视频 / 音频显示种类图标 */
+function RefChip({ kind, url }: Pick<ReferenceMedia, "kind" | "url">) {
+  return (
+    <div className="flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 text-muted-foreground">
+      {kind === "image" ? (
+        // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
+        <img
+          src={resizedImageUrl(url, THUMB_WIDTH)}
+          alt="参考素材"
+          draggable={false}
+          loading="lazy"
+          decoding="async"
+          className="size-full object-cover"
+        />
+      ) : (
+        <ChipIcon kind={kind} />
+      )}
+    </div>
+  );
+}
+
+/** 某一类参考素材的占位格，满上限后不再显示 */
+function RefPlaceholder({
+  kind,
+  label,
+  title,
+}: {
+  kind: MediaKind;
+  label: string;
+  title?: string;
+}) {
+  return (
+    <div
+      title={title}
+      className="flex h-[68px] w-[56px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed bg-muted/40 text-muted-foreground/60"
+    >
+      <ChipIcon kind={kind} />
+      <span className="text-[10px]">{label}</span>
+    </div>
+  );
+}
+
 /**
- * 参考素材横排。
- * 参考图模式：图片显示缩略图，视频 / 音频显示种类图标，未满补一个占位示例格。
- * 首尾帧模式：固定「首帧」「尾帧」两格（接口按连入顺序取前两张图）；
- * 音频参考该模式下接口仍支持，照常显示在后面。
+ * 参考素材横排，按类别分组展示，上限对齐接口约定
+ * （image_list 多张、video_list ≤3 且仅参考图模式、audio_list ≤3 总时长 ≤15s）。
+ * 参考图模式：图 / 视频 / 音频各自「已连的 + 一个占位格」，满上限收起占位。
+ * 首尾帧模式：固定「首帧」「尾帧」两格（按连入顺序取前两张图），
+ * 视频参考不支持不显示，音频照常。
  */
 function ReferenceChips({ refs, frames }: { refs: ReferenceMedia[]; frames: boolean }) {
-  if (frames) {
-    const images = refs.filter((item) => item.kind === "image");
-    const audios = refs.filter((item) => item.kind === "audio");
+  const images = refs.filter((item) => item.kind === "image");
+  const videos = refs.filter((item) => item.kind === "video");
+  const audios = refs.filter((item) => item.kind === "audio");
 
+  const audioSlots = (
+    <>
+      {audios.map((item) => (
+        <RefChip key={item.id} {...item} />
+      ))}
+      {audios.length < MAX_AUDIO_REFS && (
+        <RefPlaceholder
+          kind="audio"
+          label="参考音频"
+          title="最多 3 个，总时长不超过 15 秒，不可单独使用"
+        />
+      )}
+    </>
+  );
+
+  if (frames) {
     return (
       <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
         {(["首帧", "尾帧"] as const).map((label, index) => {
@@ -352,44 +422,26 @@ function ReferenceChips({ refs, frames }: { refs: ReferenceMedia[]; frames: bool
             </div>
           );
         })}
-        {audios.map(({ url }) => (
-          <div
-            key={url}
-            className="flex h-[68px] w-[56px] shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground"
-          >
-            <ChipIcon kind="audio" />
-          </div>
-        ))}
+        {audioSlots}
       </div>
     );
   }
 
   return (
     <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
-      {refs.map(({ kind, url }) => (
-        <div
-          key={url}
-          className="flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 text-muted-foreground"
-        >
-          {kind === "image" ? (
-            // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
-            <img
-              src={resizedImageUrl(url, THUMB_WIDTH)}
-              alt="参考素材"
-              draggable={false}
-              loading="lazy"
-              decoding="async"
-              className="size-full object-cover"
-            />
-          ) : (
-            <ChipIcon kind={kind} />
-          )}
-        </div>
+      {images.map((item) => (
+        <RefChip key={item.id} {...item} />
       ))}
-      <div className="flex h-[68px] w-[56px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border bg-muted/40 text-muted-foreground/60">
-        <ImageIcon className="size-5" strokeWidth={1.5} />
-        <span className="text-[10px]">参考素材</span>
-      </div>
+      {images.length < MAX_REFERENCE_IMAGES && (
+        <RefPlaceholder kind="image" label="参考图" title="参考图片，可连多张" />
+      )}
+      {videos.map((item) => (
+        <RefChip key={item.id} {...item} />
+      ))}
+      {videos.length < MAX_VIDEO_REFS && (
+        <RefPlaceholder kind="video" label="参考视频" title="最多 3 个，仅参考图模式支持" />
+      )}
+      {audioSlots}
     </div>
   );
 }
