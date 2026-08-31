@@ -4,6 +4,7 @@ import { AUDIO_NODE_SIZE, fitMediaSize, type MediaNodeData } from "@aigc-flow/sh
 import { Handle, type NodeProps, NodeResizer, Position, useReactFlow } from "@xyflow/react";
 import { CircleAlert, FileImage, FileVideo, Loader2, Music, Plus } from "lucide-react";
 import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "react";
+import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { NodeName } from "./node-name";
 
@@ -190,13 +191,17 @@ function MediaBody({
     return (
       // biome-ignore lint/performance/noImgElement: 用户上传的任意图片，无需 next/image
       <img
-        src={media.url}
+        src={resizedImageUrl(media.url, CANVAS_WIDTH)}
         alt={media.label}
         draggable={false}
+        loading="lazy"
+        decoding="async"
         onLoad={(event: SyntheticEvent<HTMLImageElement>) =>
           onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
         }
         onError={() => setLoadFailed(true)}
+        // 画布上渲染的是缩略版，双击才在新标签页看全尺寸原图
+        onDoubleClick={() => window.open(media.url, "_blank")}
         className="size-full select-none object-fill"
       />
     );

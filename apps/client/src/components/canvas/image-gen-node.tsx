@@ -39,6 +39,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
@@ -241,10 +242,14 @@ function ResultArea({ gen, aspect }: { gen: ImageGenNodeData; aspect: number }) 
     return (
       // biome-ignore lint/performance/noImgElement: 生成结果是任意远程图片，无需 next/image
       <img
-        src={gen.resultUrl}
+        src={resizedImageUrl(gen.resultUrl, CANVAS_WIDTH)}
         alt={gen.prompt || gen.label}
         draggable={false}
+        loading="lazy"
+        decoding="async"
         onError={() => setLoadFailed(true)}
+        // 画布上渲染的是缩略版，双击才在新标签页看全尺寸原图
+        onDoubleClick={() => gen.resultUrl && window.open(gen.resultUrl, "_blank")}
         className="w-full select-none"
       />
     );
@@ -301,7 +306,14 @@ function ReferenceChips({ urls }: { urls: string[] }) {
       {shown.map((url) => (
         <div key={url} className="h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border">
           {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
-          <img src={url} alt="参考图" draggable={false} className="size-full object-cover" />
+          <img
+            src={resizedImageUrl(url, THUMB_WIDTH)}
+            alt="参考图"
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+            className="size-full object-cover"
+          />
         </div>
       ))}
       {shown.length < MAX_REFERENCE_IMAGES && (

@@ -54,6 +54,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeName } from "./node-name";
@@ -331,9 +332,11 @@ function ReferenceChips({ refs, frames }: { refs: ReferenceMedia[]; frames: bool
                 <>
                   {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
                   <img
-                    src={item.url}
+                    src={resizedImageUrl(item.url, THUMB_WIDTH)}
                     alt={label}
                     draggable={false}
+                    loading="lazy"
+                    decoding="async"
                     className="size-full object-cover"
                   />
                   <span className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center text-[10px] text-white">
@@ -370,7 +373,14 @@ function ReferenceChips({ refs, frames }: { refs: ReferenceMedia[]; frames: bool
         >
           {kind === "image" ? (
             // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
-            <img src={url} alt="参考素材" draggable={false} className="size-full object-cover" />
+            <img
+              src={resizedImageUrl(url, THUMB_WIDTH)}
+              alt="参考素材"
+              draggable={false}
+              loading="lazy"
+              decoding="async"
+              className="size-full object-cover"
+            />
           ) : (
             <ChipIcon kind={kind} />
           )}
