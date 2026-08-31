@@ -39,6 +39,7 @@ import {
   Play,
   Plus,
 } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -90,8 +91,10 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
-  const { activeNodeId } = useCanvasActions();
+  const { activeNodeId, dropTargetId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
+  // 拖线悬停且本节点能接受时播放「可放置」动画
+  const isDropTarget = dropTargetId === id;
 
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
@@ -165,11 +168,20 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
         {/* 端点挂在占位符容器两侧垂直中心，菜单展开收起不影响端点位置（同图像节点） */}
-        <div className="relative">
+        <motion.div
+          className="relative"
+          animate={isDropTarget ? { scale: [1, 1.02, 1] } : { scale: 1 }}
+          transition={
+            isDropTarget
+              ? { duration: 0.9, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+              : { duration: 0.15 }
+          }
+        >
           <div
             className={cn(
               "w-full overflow-hidden rounded-md",
               selected && "outline outline-1 outline-[#3b82f6]",
+              isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
             <ResultArea gen={gen} aspect={currentAspect(gen)} />
@@ -190,7 +202,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>
-        </div>
+        </motion.div>
 
         {showMenu && (
           <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>

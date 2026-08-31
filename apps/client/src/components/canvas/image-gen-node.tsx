@@ -25,6 +25,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import { ChevronDown, CircleAlert, ImageIcon, Loader2, Plus, WandSparkles } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,8 +76,10 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
   const zoom = useStore((state) => state.transform[2]);
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
-  const { activeNodeId } = useCanvasActions();
+  const { activeNodeId, dropTargetId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
+  // 拖线悬停且本节点能接受时播放「可放置」动画
+  const isDropTarget = dropTargetId === id;
 
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
@@ -145,11 +148,20 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           菜单在下方展开 / 收起都不会影响端点位置。端点不能放进 overflow-hidden
           那层，会被圆角裁掉，所以套了两层。
         */}
-        <div className="relative">
+        <motion.div
+          className="relative"
+          animate={isDropTarget ? { scale: [1, 1.02, 1] } : { scale: 1 }}
+          transition={
+            isDropTarget
+              ? { duration: 0.9, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+              : { duration: 0.15 }
+          }
+        >
           <div
             className={cn(
               "w-full overflow-hidden rounded-md",
               selected && "outline outline-1 outline-[#3b82f6]",
+              isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
             <ResultArea gen={gen} aspect={currentAspect(gen)} />
@@ -172,7 +184,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>
-        </div>
+        </motion.div>
 
         {/*
           配置菜单单击节点才展开（框选不展开）。外层用 1/zoom 反向缩放让它在屏幕上

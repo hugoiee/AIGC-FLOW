@@ -17,6 +17,11 @@ type CanvasActions = {
    * 图像生成节点的配置菜单只在单击时展开，框选中不展开。
    */
   activeNodeId: string | null;
+  /**
+   * 拖线悬停中的可放置目标节点 id。只有能接受当前连线的节点才会被设上，
+   * 生成节点据此播放「可放置」动画；松手或悬到不能接受的节点时为 null。
+   */
+  dropTargetId: string | null;
 };
 
 const CanvasActionsContext = createContext<CanvasActions | null>(null);

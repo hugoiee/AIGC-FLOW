@@ -240,6 +240,38 @@ export function CanvasEditor({
   const [floatLine, setFloatLine] = useState<FloatLine | null>(null);
   const [picker, setPicker] = useState<NodePickerRequest | null>(null);
 
+  // 拖线悬停中的可放置目标。只在目标能接受当前连线时设值，节点据此播动画
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  /** 拖线过程中按悬停位置刷新可放置目标：sources 里至少一个能连才算 */
+  const updateDropTarget = useCallback(
+    (point: { x: number; y: number }, sources: Node[]) => {
+      const flow = screenToFlowPosition(point);
+      const target = getIntersectingNodes({ x: flow.x, y: flow.y, width: 1, height: 1 }).find(
+        (node) => targetAcceptsOf(node.type) !== null,
+      );
+      const ok =
+        target && sources.some((node) => node.id !== target.id && canConnectNodes(node, target));
+      setDropTargetId(ok && target ? target.id : null);
+    },
+    [screenToFlowPosition, getIntersectingNodes],
+  );
+
+  /** 浮动端点拖动中：更新虚线 + 刷新可放置目标 */
+  const handleFloatDragLine = useCallback(
+    (line: FloatLine) => {
+      setFloatLine(line);
+      updateDropTarget(
+        line.to,
+        nodesRef.current.filter((node) => node.selected && sourceResourceOf(node) !== null),
+      );
+    },
+    [updateDropTarget],
+  );
+
+  // 普通端点拖线时挂在 window 上的 move 监听，onConnectEnd 时卸掉
+  const connectDragCleanupRef = useRef<(() => void) | null>(null);
+
   /** 选区里能往外连的资源节点（媒体 / 生成结果 / 文本） */
   const selectedResourceIds = useMemo(
     () =>
@@ -252,6 +284,7 @@ export function CanvasEditor({
   /** 浮动端点松手：落在能接受的节点上就批量连线，否则原地弹节点选择菜单 */
   const handleFloatingDrop = useCallback(
     (point: { x: number; y: number }) => {
+      setDropTargetId(null);
       const flow = screenToFlowPosition(point);
       const sources = nodesRef.current.filter(
         (node) => node.selected && sourceResourceOf(node) !== null,
@@ -327,7 +360,10 @@ export function CanvasEditor({
     setFloatLine(null);
   }, []);
 
-  const canvasActions = useMemo(() => ({ renameNode, activeNodeId }), [renameNode, activeNodeId]);
+  const canvasActions = useMemo(
+    () => ({ renameNode, activeNodeId, dropTargetId }),
+    [renameNode, activeNodeId, dropTargetId],
+  );
 
   const selectedIds = useMemo(
     () => nodes.filter((node) => node.selected).map((node) => node.id),
@@ -528,7 +564,21 @@ export function CanvasEditor({
             onNodeDragStop={() => commitNow(nodes, edges)}
             onNodesDelete={() => commitNow(nodes, edges)}
             onEdgesDelete={() => commitNow(nodes, edges)}
+            onConnectStart={(_, { nodeId, handleType }) => {
+              // 普通端点拖线时也做「可放置」高亮：move 里按悬停位置刷新目标
+              if (handleType !== "source" || !nodeId) return;
+              const fromNode = nodesRef.current.find((node) => node.id === nodeId);
+              if (!fromNode) return;
+              const handleMove = (move: PointerEvent) =>
+                updateDropTarget({ x: move.clientX, y: move.clientY }, [fromNode]);
+              window.addEventListener("pointermove", handleMove);
+              connectDragCleanupRef.current = () =>
+                window.removeEventListener("pointermove", handleMove);
+            }}
             onConnectEnd={(event, connectionState) => {
+              connectDragCleanupRef.current?.();
+              connectDragCleanupRef.current = null;
+              setDropTargetId(null);
               // 拖普通端点的线松手在节点身上（没落在 target 端点上）也算连上
               if (connectionState.isValid) return;
               const fromNode = connectionState.fromNode;
@@ -590,7 +640,7 @@ export function CanvasEditor({
             <FloatingConnector
               selectedIds={selectedIds}
               visible={!isMove && selectedResourceIds.length >= 2}
-              onDragLine={setFloatLine}
+              onDragLine={handleFloatDragLine}
               onDrop={handleFloatingDrop}
             />
 
