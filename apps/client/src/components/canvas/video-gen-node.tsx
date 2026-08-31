@@ -48,8 +48,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
@@ -524,33 +524,27 @@ function VideoSetting({ nodeId, gen }: { nodeId: string; gen: VideoGenNodeData }
           <p className="text-muted-foreground text-xs">
             时长（{version.maxDuration === 15 ? "4–15" : "4–30"} 秒）
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <PillOption
               active={gen.duration === AUTO_DURATION}
               onClick={() => updateNodeData(nodeId, { duration: AUTO_DURATION })}
             >
               自动
             </PillOption>
-            <Input
-              type="number"
+            {/* 拖动滑块即退出自动档；自动档下滑块停在默认的 5s 位置 */}
+            <Slider
               min={4}
               max={version.maxDuration}
-              value={gen.duration === AUTO_DURATION ? "" : gen.duration}
-              placeholder="秒"
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (!event.target.value) {
-                  updateNodeData(nodeId, { duration: AUTO_DURATION });
-                  return;
-                }
-                if (Number.isInteger(value)) {
-                  updateNodeData(nodeId, {
-                    duration: Math.min(Math.max(value, 4), version.maxDuration),
-                  });
-                }
+              step={1}
+              value={[gen.duration === AUTO_DURATION ? 5 : gen.duration]}
+              onValueChange={([value]) => {
+                if (value !== undefined) updateNodeData(nodeId, { duration: value });
               }}
-              className="h-9 w-24 rounded-full"
+              className="flex-1"
             />
+            <span className="w-10 shrink-0 text-right text-sm tabular-nums">
+              {gen.duration === AUTO_DURATION ? "—" : `${gen.duration}s`}
+            </span>
           </div>
         </section>
 

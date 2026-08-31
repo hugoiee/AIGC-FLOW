@@ -87,14 +87,15 @@ export const videoGenNodeDataSchema = z.object({
 
 export type VideoGenNodeData = z.infer<typeof videoGenNodeDataSchema>;
 
+/** 默认：Seedance 2.0 · 参考图模式 · 1080p · 自适应宽高比 · 5s */
 export const DEFAULT_VIDEO_GEN_DATA: VideoGenNodeData = {
   label: "视频生成",
   version: "seedance-2.0",
   mode: "reference_image",
   prompt: "",
   resolution: "1080p",
-  ratio: "16:9",
-  duration: AUTO_DURATION,
+  ratio: "adaptive",
+  duration: 5,
   generateAudio: true,
   status: "idle",
 };
@@ -108,8 +109,8 @@ export const generateVideoRequestSchema = z.object({
   videoList: z.array(z.url()).max(MAX_VIDEO_REFS).default([]),
   audioList: z.array(z.url()).max(MAX_AUDIO_REFS).default([]),
   resolution: videoResolutionSchema.default("1080p"),
-  ratio: videoRatioSchema.default("16:9"),
-  duration: videoDurationSchema.default(AUTO_DURATION),
+  ratio: videoRatioSchema.default("adaptive"),
+  duration: videoDurationSchema.default(5),
   generateAudio: z.boolean().default(true),
 });
 
