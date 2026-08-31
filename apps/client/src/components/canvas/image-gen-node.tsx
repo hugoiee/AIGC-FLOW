@@ -1,0 +1,453 @@
+"use client";
+
+import {
+  GPT_QUALITIES,
+  GPT_SIZE_PRESETS,
+  gptSizeOf,
+  IMAGE_GEN_NODE_TYPE,
+  IMAGE_GEN_NODE_WIDTH,
+  IMAGE_MODELS,
+  type ImageGenNodeData,
+  imageModelOf,
+  MEDIA_NODE_TYPE,
+  type MediaNodeData,
+  NANO_ASPECT_RATIOS,
+  NANO_IMAGE_SIZES,
+} from "@aigc-flow/shared";
+import {
+  Handle,
+  type NodeProps,
+  Position,
+  useNodeConnections,
+  useNodesData,
+  useReactFlow,
+} from "@xyflow/react";
+import { ChevronDown, CircleAlert, ImageIcon, Loader2, Plus, WandSparkles } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
+import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { ModelIcon } from "./model-icon";
+import { NodeName } from "./node-name";
+
+/** 选中态强调色，和媒体节点保持一致 */
+const ACCENT = "#3b82f6";
+
+/** 参考图 chips 至少显示这么多格，空位用占位样式补齐（对齐设计稿） */
+const MIN_CHIP_SLOTS = 8;
+
+/** 圆形外浮连接点，样式对齐媒体节点的 source 端点 */
+const HANDLE_BASE: CSSProperties = {
+  width: 20,
+  height: 20,
+  borderRadius: 9999,
+  border: "1px solid var(--border)",
+  backgroundColor: "var(--background)",
+  color: "var(--muted-foreground)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+/**
+ * 从上游节点里取出能作为参考图的 URL：
+ * 图片媒体节点的 url，或另一个图像生成节点的结果图 —— 生成结果可以链式引用。
+ */
+export function referenceUrlOf(node: { type?: string; data: unknown }): string | null {
+  if (node.type === MEDIA_NODE_TYPE) {
+    const media = node.data as MediaNodeData;
+    return media.kind === "image" && media.status === "ready" && media.url ? media.url : null;
+  }
+  if (node.type === IMAGE_GEN_NODE_TYPE) {
+    const gen = node.data as ImageGenNodeData;
+    return gen.status === "ready" && gen.resultUrl ? gen.resultUrl : null;
+  }
+  return null;
+}
+
+export function ImageGenNode({ id, data, selected }: NodeProps) {
+  const gen = data as unknown as ImageGenNodeData;
+  const { updateNodeData } = useReactFlow();
+
+  // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
+  const connections = useNodeConnections({ handleType: "target" });
+  const sources = useNodesData(connections.map((connection) => connection.source));
+  const referenceUrls = sources
+    .map((node) => referenceUrlOf(node))
+    .filter((url): url is string => url !== null);
+
+  const generating = gen.status === "generating";
+
+  /**
+   * 点生成：状态机 idle/ready/error → generating → ready | error。
+   * 内网接口同步阻塞，这个请求可能要等几十秒到几分钟。
+   */
+  async function handleGenerate() {
+    if (generating) return;
+    updateNodeData(id, { status: "generating", error: undefined });
+
+    try {
+      const res = await api.api.generate.$post({
+        json: {
+          model: gen.model,
+          prompt: gen.prompt.trim(),
+          imageList: referenceUrls,
+          quality: gen.quality,
+          sizePreset: gen.sizePreset,
+          aspectRatio: gen.aspectRatio,
+          imageSize: gen.imageSize,
+        },
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { message?: string } | null;
+        updateNodeData(id, {
+          status: "error",
+          error: body?.message ?? `生成失败（${res.status}）`,
+        });
+        return;
+      }
+
+      const { url } = (await res.json()) as { url: string };
+      updateNodeData(id, { status: "ready", resultUrl: url, error: undefined });
+    } catch {
+      updateNodeData(id, { status: "error", error: "连不上服务，确认 server 已启动" });
+    }
+  }
+
+  return (
+    <>
+      {selected && (
+        <div
+          className="-top-6 pointer-events-none absolute inset-x-0 flex items-center text-xs"
+          style={{ color: ACCENT }}
+        >
+          <span className="flex min-w-0 items-center gap-1">
+            <WandSparkles className="size-3.5 shrink-0" />
+            <NodeName nodeId={id} label={gen.label} />
+          </span>
+        </div>
+      )}
+
+      <div
+        className={cn("flex flex-col gap-4", selected && "rounded-lg")}
+        style={{ width: IMAGE_GEN_NODE_WIDTH }}
+      >
+        <ResultArea gen={gen} />
+
+        <div
+          className={cn(
+            "flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm",
+            selected && "outline outline-1 outline-[#3b82f6]",
+          )}
+        >
+          <ReferenceChips urls={referenceUrls} />
+
+          <Textarea
+            value={gen.prompt}
+            onChange={(event) => updateNodeData(id, { prompt: event.target.value })}
+            placeholder="今天我们要创作什么？"
+            className="nodrag nowheel min-h-16 resize-none border-none p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          />
+
+          <div className="flex items-center justify-between gap-2">
+            <SizeSetting nodeId={id} gen={gen} />
+            <div className="flex items-center gap-2">
+              <ModelSelect nodeId={id} gen={gen} />
+              <Button
+                size="sm"
+                className="nodrag rounded-full px-5"
+                disabled={generating || !gen.prompt.trim()}
+                onClick={handleGenerate}
+              >
+                {generating && <Loader2 className="animate-spin" />}
+                {generating ? "生成中" : "生成"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/*
+        左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
+        端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出。
+        都放在卡片外层，避免被圆角裁掉。
+      */}
+      <Handle type="target" position={Position.Left} style={{ ...HANDLE_BASE, left: -28 }}>
+        <Plus className="pointer-events-none size-3" />
+      </Handle>
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{
+          ...HANDLE_BASE,
+          right: -28,
+          opacity: selected ? 1 : 0,
+          pointerEvents: selected ? "auto" : "none",
+        }}
+      >
+        <Plus className="pointer-events-none size-3" />
+      </Handle>
+    </>
+  );
+}
+
+/** 上方结果区：占位 → 生成中 → 结果图 / 失败。宽度对齐设计稿的 380，居中 */
+function ResultArea({ gen }: { gen: ImageGenNodeData }) {
+  if (gen.status === "ready" && gen.resultUrl) {
+    return (
+      // biome-ignore lint/performance/noImgElement: 生成结果是任意远程图片，无需 next/image
+      <img
+        src={gen.resultUrl}
+        alt={gen.prompt || gen.label}
+        draggable={false}
+        className="mx-auto w-[380px] select-none rounded-md"
+      />
+    );
+  }
+
+  if (gen.status === "error") {
+    return (
+      <div className="mx-auto flex aspect-video w-[380px] flex-col items-center justify-center gap-1.5 rounded-md border border-destructive/60 border-dashed bg-destructive/5 px-4 text-center text-destructive text-xs">
+        <CircleAlert className="size-5" />
+        <span className="line-clamp-3">{gen.error ?? "生成失败"}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex aspect-video w-[380px] flex-col items-center justify-center gap-2 rounded-md bg-muted text-muted-foreground/50">
+      {gen.status === "generating" ? (
+        <>
+          <Loader2 className="size-8 animate-spin" />
+          <span className="text-xs">生成中，请耐心等待…</span>
+        </>
+      ) : (
+        <ImageIcon className="size-14" strokeWidth={1.25} />
+      )}
+    </div>
+  );
+}
+
+/** 参考图横排。已连接的显示缩略图，空位补占位格 */
+function ReferenceChips({ urls }: { urls: string[] }) {
+  const placeholders = Math.max(MIN_CHIP_SLOTS - urls.length, 1);
+
+  return (
+    <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
+      {urls.map((url) => (
+        <div
+          key={url}
+          className="size-[56px] h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border"
+        >
+          {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
+          <img src={url} alt="参考图" draggable={false} className="size-full object-cover" />
+        </div>
+      ))}
+      {Array.from({ length: placeholders }, (_, index) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: 纯占位格，无状态可言
+          key={index}
+          className="flex h-[68px] w-[56px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border bg-muted/40 text-muted-foreground/60"
+        >
+          <ImageIcon className="size-5" strokeWidth={1.5} />
+          <span className="text-[10px]">参考图</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 底部左侧：图像设置弹层。gpt 配质量 + 尺寸档（对齐设计稿的「图像设置」面板），
+ * nano 配分辨率 + 宽高比 —— 两家接口的 config 形状不同，弹层内容跟着模型切换。
+ */
+function SizeSetting({ nodeId, gen }: { nodeId: string; gen: ImageGenNodeData }) {
+  const { updateNodeData } = useReactFlow();
+  const isGpt = gen.model === "gpt-image-2";
+  const label = isGpt
+    ? `${qualityLabel(gen.quality)} · ${gen.sizePreset}`
+    : `${gen.aspectRatio} · ${gen.imageSize}`;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="nodrag rounded-full">
+          {label}
+          <ChevronDown className="opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 space-y-4">
+        <p className="font-medium text-sm">图像设置</p>
+
+        <section className="space-y-2">
+          <p className="text-muted-foreground text-xs">{isGpt ? "质量" : "分辨率"}</p>
+          <div className="flex flex-wrap gap-2">
+            {isGpt
+              ? GPT_QUALITIES.map(({ value, label: text }) => (
+                  <PillOption
+                    key={value}
+                    active={gen.quality === value}
+                    onClick={() => updateNodeData(nodeId, { quality: value })}
+                  >
+                    {text}
+                  </PillOption>
+                ))
+              : NANO_IMAGE_SIZES.map((size) => (
+                  <PillOption
+                    key={size}
+                    active={gen.imageSize === size}
+                    onClick={() => updateNodeData(nodeId, { imageSize: size })}
+                  >
+                    {size}
+                  </PillOption>
+                ))}
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <p className="text-muted-foreground text-xs">宽高比</p>
+          <div className="grid grid-cols-4 gap-2">
+            {isGpt
+              ? GPT_SIZE_PRESETS.map((preset) => (
+                  <RatioOption
+                    key={preset.id}
+                    label={preset.id}
+                    width={preset.width}
+                    height={preset.height}
+                    active={gen.sizePreset === preset.id}
+                    onClick={() => updateNodeData(nodeId, { sizePreset: preset.id })}
+                  />
+                ))
+              : NANO_ASPECT_RATIOS.map((ratio) => {
+                  const [w = 1, h = 1] = ratio.split(":").map(Number);
+                  return (
+                    <RatioOption
+                      key={ratio}
+                      label={ratio}
+                      width={w}
+                      height={h}
+                      active={gen.aspectRatio === ratio}
+                      onClick={() => updateNodeData(nodeId, { aspectRatio: ratio })}
+                    />
+                  );
+                })}
+          </div>
+        </section>
+
+        {isGpt && gen.sizePreset !== "auto" && (
+          <p className="text-muted-foreground text-xs">
+            输出尺寸：{gptSizeOf(gen.sizePreset).width} × {gptSizeOf(gen.sizePreset).height}
+          </p>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** 质量 / 分辨率的胶囊选项 */
+function PillOption({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-4 py-1.5 text-sm transition-colors hover:bg-accent",
+        active && "border-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 宽高比网格里的一格：小矩形示意 + 文案，对齐设计稿 */
+function RatioOption({
+  label,
+  width,
+  height,
+  active,
+  onClick,
+}: {
+  label: string;
+  width: number;
+  height: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  // auto（0×0）画不出比例矩形，给个方形占位
+  const ratio = width > 0 && height > 0 ? width / height : 1;
+  const box = ratio >= 1 ? { width: 20, height: 20 / ratio } : { width: 20 * ratio, height: 20 };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex h-16 flex-col items-center justify-center gap-1.5 rounded-lg border text-xs transition-colors hover:bg-accent",
+        active && "border-foreground",
+      )}
+    >
+      {label === "auto" ? (
+        <span className="text-muted-foreground text-sm">auto</span>
+      ) : (
+        <>
+          <span className="rounded-[3px] border-[1.5px] border-foreground/70" style={box} />
+          <span>{label}</span>
+        </>
+      )}
+    </button>
+  );
+}
+
+/** 底部右侧：模型选择，选项对齐设计稿的「图像模型」菜单 */
+function ModelSelect({ nodeId, gen }: { nodeId: string; gen: ImageGenNodeData }) {
+  const { updateNodeData } = useReactFlow();
+  const model = imageModelOf(gen.model);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="nodrag rounded-full">
+          <ModelIcon modelId={model.id} />
+          {model.label}
+          <ChevronDown className="opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel className="text-muted-foreground">图像模型</DropdownMenuLabel>
+        {IMAGE_MODELS.map((item) => (
+          <DropdownMenuItem
+            key={item.id}
+            onSelect={() => updateNodeData(nodeId, { model: item.id })}
+            className={cn(item.id === gen.model && "bg-accent")}
+          >
+            <ModelIcon modelId={item.id} />
+            {item.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function qualityLabel(quality: ImageGenNodeData["quality"]): string {
+  return { auto: "自动", high: "高", medium: "中", low: "低" }[quality];
+}

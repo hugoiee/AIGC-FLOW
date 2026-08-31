@@ -1,5 +1,5 @@
 import type { MediaKind, UploadedFile } from "@aigc-flow/shared";
-import { getUploadBaseUrl } from "../db/settings";
+import { getAppSettings } from "../db/settings";
 
 /**
  * 内网接口按媒体种类分了两个端点：音频走 /api/upload-media，图像和视频走 /api/upload。
@@ -7,7 +7,7 @@ import { getUploadBaseUrl } from "../db/settings";
  */
 function remoteEndpoint(kind: MediaKind): string {
   const path = kind === "audio" ? "/api/upload-media" : "/api/upload";
-  return `${getUploadBaseUrl().replace(/\/+$/, "")}${path}`;
+  return `${getAppSettings().uploadBaseUrl.replace(/\/+$/, "")}${path}`;
 }
 
 /**

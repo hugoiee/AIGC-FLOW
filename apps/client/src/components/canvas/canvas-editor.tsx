@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  DEFAULT_IMAGE_GEN_DATA,
   GROUP_NODE_TYPE,
+  IMAGE_GEN_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type Project,
@@ -49,6 +51,7 @@ import {
 } from "@/lib/layout";
 import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
 import { GroupNode } from "./group-node";
+import { ImageGenNode } from "./image-gen-node";
 import { MediaNode } from "./media-node";
 import { type CanvasMode, type NodeKind, NodePalette } from "./node-palette";
 import { SelectionToolbar } from "./selection-toolbar";
@@ -63,7 +66,11 @@ const KIND_LABELS: Record<NodeKind, string> = {
 const PASTE_OFFSET = 40;
 
 // 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
-const NODE_TYPES = { [MEDIA_NODE_TYPE]: MediaNode, [GROUP_NODE_TYPE]: GroupNode };
+const NODE_TYPES = {
+  [MEDIA_NODE_TYPE]: MediaNode,
+  [GROUP_NODE_TYPE]: GroupNode,
+  [IMAGE_GEN_NODE_TYPE]: ImageGenNode,
+};
 
 type CanvasEditorProps = {
   project: Project;
@@ -160,6 +167,26 @@ export function CanvasEditor({
     },
     [screenToFlowPosition, setNodes, commitNow, nodes, edges],
   );
+
+  /** 图像生成节点：落在视口中心，带一份默认参数 */
+  const handleAddImageGen = useCallback(() => {
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    const center = rect
+      ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
+      : { x: 0, y: 0 };
+
+    const next: Node[] = [
+      ...nodes,
+      {
+        id: crypto.randomUUID(),
+        type: IMAGE_GEN_NODE_TYPE,
+        position: { x: center.x - 267, y: center.y - 240 },
+        data: { ...DEFAULT_IMAGE_GEN_DATA } as unknown as Record<string, unknown>,
+      },
+    ];
+    setNodes(next);
+    commitNow(next, edges);
+  }, [screenToFlowPosition, setNodes, commitNow, nodes, edges]);
 
   /**
    * 改名由节点内部的信息条发起（双击名称），经 context 传下去。
@@ -430,6 +457,7 @@ export function CanvasEditor({
                 mode={mode}
                 onModeChange={setMode}
                 onAdd={handleAddNode}
+                onAddImageGen={handleAddImageGen}
                 onPickFiles={handlePickFiles}
                 canUndo={history.canUndo}
                 canRedo={history.canRedo}

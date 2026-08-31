@@ -1,6 +1,6 @@
 "use client";
 
-import { appSettingsSchema } from "@aigc-flow/shared";
+import { type AppSettings, appSettingsSchema, DEFAULT_APP_SETTINGS } from "@aigc-flow/shared";
 import { Settings } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -18,16 +18,43 @@ import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 
+/** 三个设置项的展示配置，新增设置项在这里加一行 */
+const FIELDS: Array<{
+  key: keyof AppSettings;
+  label: string;
+  placeholder: string;
+  hint: string;
+}> = [
+  {
+    key: "uploadBaseUrl",
+    label: "内网上传服务地址",
+    placeholder: "http://10.75.202.161:8511",
+    hint: "素材经服务端转发上传到这里，填完整根地址（含 http:// 和端口）。",
+  },
+  {
+    key: "generateBaseUrl",
+    label: "内网生成服务地址",
+    placeholder: "http://10.75.202.161:8204",
+    hint: "模型生成（/aigc）走这里，和上传服务不是同一个端口。",
+  },
+  {
+    key: "reqFrom",
+    label: "请求来源标识（req_from）",
+    placeholder: "v_zhangsan",
+    hint: "生成接口要求携带的个人标识，不填无法生成。",
+  },
+];
+
 /**
- * 全局设置面板。目前只有一项：内网上传服务根地址。
- * 配置存在服务端 settings 表里，所有浏览器共享同一份。
+ * 全局设置面板。配置存在服务端 settings 表里，所有浏览器共享同一份。
  */
 export function SettingsDialog() {
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
+  const [values, setValues] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** 校验失败时定位到具体字段；网络类错误挂在 form 上 */
+  const [error, setError] = useState<{ field: string; message: string } | null>(null);
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
@@ -38,8 +65,8 @@ export function SettingsDialog() {
     api.api.settings
       .$get()
       .then((res) => res.json())
-      .then((data) => setValue(data.uploadBaseUrl))
-      .catch(() => setError("读取设置失败，确认 server 已启动"))
+      .then((data) => setValues(data))
+      .catch(() => setError({ field: "form", message: "读取设置失败，确认 server 已启动" }))
       .finally(() => setLoading(false));
   };
 
@@ -47,9 +74,13 @@ export function SettingsDialog() {
     event.preventDefault();
 
     // 校验用的是和服务端同一份 shared schema，两边判断永远一致
-    const parsed = appSettingsSchema.safeParse({ uploadBaseUrl: value.trim() });
+    const parsed = appSettingsSchema.safeParse(values);
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "地址格式不正确");
+      const issue = parsed.error.issues[0];
+      setError({
+        field: String(issue?.path[0] ?? "form"),
+        message: issue?.message ?? "输入不正确",
+      });
       return;
     }
 
@@ -58,12 +89,13 @@ export function SettingsDialog() {
     try {
       const res = await api.api.settings.$put({ json: parsed.data });
       if (!res.ok) {
-        setError("保存失败，请检查地址格式");
+        setError({ field: "form", message: "保存失败，请检查输入" });
         return;
       }
+      setValues(parsed.data);
       setOpen(false);
     } catch {
-      setError("连不上服务，确认 server 已启动");
+      setError({ field: "form", message: "连不上服务，确认 server 已启动" });
     } finally {
       setSaving(false);
     }
@@ -85,33 +117,38 @@ export function SettingsDialog() {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>设置</DialogTitle>
-          <DialogDescription>
-            素材会经服务端转发上传到内网服务，这里配置它的地址。
-          </DialogDescription>
+          <DialogDescription>内网服务的连接配置，保存在服务端，所有人共享。</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="upload-base-url">内网上传服务地址</Label>
-            <Input
-              id="upload-base-url"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              placeholder="http://10.75.202.161:8511"
-              disabled={loading}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            {error ? (
-              <p className="text-destructive text-sm">{error}</p>
-            ) : (
-              <p className="text-muted-foreground text-sm">
-                填完整根地址（含 http:// 和端口），上传接口路径由系统自动拼接。
+          {FIELDS.map(({ key, label, placeholder, hint }) => (
+            <div key={key} className="space-y-2">
+              <Label htmlFor={`setting-${key}`}>{label}</Label>
+              <Input
+                id={`setting-${key}`}
+                value={values[key]}
+                onChange={(event) =>
+                  setValues((current) => ({ ...current, [key]: event.target.value }))
+                }
+                placeholder={placeholder}
+                disabled={loading}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p
+                className={
+                  error?.field === key
+                    ? "text-destructive text-sm"
+                    : "text-muted-foreground text-sm"
+                }
+              >
+                {error?.field === key ? error.message : hint}
               </p>
-            )}
-          </div>
+            </div>
+          ))}
 
-          <DialogFooter>
+          <DialogFooter className="items-center gap-3">
+            {error?.field === "form" && <p className="text-destructive text-sm">{error.message}</p>}
             <Button type="submit" disabled={loading || saving}>
               {saving ? "保存中…" : "保存"}
             </Button>

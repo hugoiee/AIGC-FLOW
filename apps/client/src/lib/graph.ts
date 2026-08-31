@@ -2,6 +2,7 @@ import {
   type CanvasEdge,
   type CanvasNode,
   GROUP_NODE_TYPE,
+  IMAGE_GEN_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type ProjectGraph,
@@ -36,7 +37,7 @@ export function toPersistedGraph(nodes: Node[], edges: Edge[], viewport: Viewpor
         id: node.id,
         type: node.type,
         position: node.position,
-        data: { label: String(node.data?.label ?? "未命名节点"), ...node.data },
+        data: persistedData(node),
         // 只落媒体节点和编组的尺寸。普通节点的 width/height 是 React Flow 量出来的，
         // 存下来会让"内容自适应"变成"锁死在上次量到的值"
         // 锁比例拖拽会算出 632.888…/112.5 这种小数，落库前取整。
@@ -117,6 +118,21 @@ export function fromPersistedGraph(graph: ProjectGraph): { nodes: Node[]; edges:
         type: edge.type,
       })),
   };
+}
+
+/**
+ * 图像生成节点的「生成中」是运行时状态，落盘一律回退成 idle ——
+ * 刷新后请求已经断了，存下来只会是一个永远转圈的死节点。
+ */
+function persistedData(node: Node): CanvasNode["data"] {
+  const data: CanvasNode["data"] = {
+    ...node.data,
+    label: String(node.data?.label ?? "未命名节点"),
+  };
+  if (node.type === IMAGE_GEN_NODE_TYPE && data.status === "generating") {
+    return { ...data, status: "idle" };
+  }
+  return data;
 }
 
 /** 父节点排前、子节点排后。只有一层父子，不用做拓扑排序 */

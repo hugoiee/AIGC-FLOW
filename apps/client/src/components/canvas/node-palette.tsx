@@ -1,6 +1,16 @@
 "use client";
 
-import { CircleDot, Hand, LogIn, LogOut, MousePointer2, Redo2, Undo2, Upload } from "lucide-react";
+import {
+  CircleDot,
+  Hand,
+  LogIn,
+  LogOut,
+  MousePointer2,
+  Redo2,
+  Undo2,
+  Upload,
+  WandSparkles,
+} from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -38,6 +48,7 @@ type NodePaletteProps = {
   mode: CanvasMode;
   onModeChange: (mode: CanvasMode) => void;
   onAdd: (kind: NodeKind) => void;
+  onAddImageGen: () => void;
   onPickFiles: (files: File[]) => void;
   canUndo: boolean;
   canRedo: boolean;
@@ -49,6 +60,7 @@ export function NodePalette({
   mode,
   onModeChange,
   onAdd,
+  onAddImageGen,
   onPickFiles,
   canUndo,
   canRedo,
@@ -81,6 +93,18 @@ export function NodePalette({
           </TooltipContent>
         </Tooltip>
       ))}
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddImageGen} aria-label="添加图像生成节点">
+            <WandSparkles />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">图像生成</p>
+          <p className="opacity-75">左侧连参考图，填提示词调模型出图</p>
+        </TooltipContent>
+      </Tooltip>
 
       <Separator orientation="vertical" className="!h-5 mx-1" />
 

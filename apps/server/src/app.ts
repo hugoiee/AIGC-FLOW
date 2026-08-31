@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { corsOrigins } from "./env";
+import { generateRoute } from "./routes/generate";
 import { healthRoute } from "./routes/health";
 import { projectsRoute } from "./routes/projects";
 import { settingsRoute } from "./routes/settings";
@@ -17,7 +18,8 @@ const app = new Hono()
   .route("/api/health", healthRoute)
   .route("/api/projects", projectsRoute)
   .route("/api/settings", settingsRoute)
-  .route("/api/uploads", uploadsRoute);
+  .route("/api/uploads", uploadsRoute)
+  .route("/api/generate", generateRoute);
 
 app.onError((err, c) => {
   console.error("[server error]", err);
