@@ -17,6 +17,11 @@ image_list / video_list / audio_list），结果显示在节点上方，右侧 s
 `clampVideoConfig`。**首尾帧模式的 mode 值是占位的 `first_last_frame`**，
 接口文档没写明，内网联调后改 `packages/shared/src/video-gen.ts` 一处即可。
 生成接口要求 req_from（设置面板里填），不填服务端直接拒绝。
+文本节点（Textarea）连给生成节点后在 prompt 里显示为徽章：prompt 存
+`{{text:<节点id>}}` token（数据契约，见 `packages/shared/src/text-node.ts`），
+输入框是 contentEditable（`prompt-editor.tsx`），发请求前按 token 位置替换成
+文本内容。连线增删与 token 同步的规则：新连线追加到末尾、断线移除、
+手动删掉徽章不补回（断线重连可重新插入）。
 音频生成节点尚未开发。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。

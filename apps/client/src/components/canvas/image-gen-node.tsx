@@ -35,13 +35,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Textarea } from "@/components/ui/textarea";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
 import { NodeName } from "./node-name";
+import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
 function currentAspect(gen: ImageGenNodeData): number {
@@ -81,6 +81,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
+  const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
   const referenceUrls = sources
     .map((node) => referenceUrlOf(node))
     .filter((url): url is string => url !== null);
@@ -99,7 +100,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
       const res = await api.api.generate.$post({
         json: {
           model: gen.model,
-          prompt: gen.prompt.trim(),
+          prompt: resolvedPrompt,
           imageList: referenceUrls.slice(0, MAX_REFERENCE_IMAGES),
           quality: gen.quality,
           sizePreset: gen.sizePreset,
@@ -183,11 +184,11 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
               <ReferenceChips urls={referenceUrls} />
 
-              <Textarea
+              <PromptEditor
                 value={gen.prompt}
-                onChange={(event) => updateNodeData(id, { prompt: event.target.value })}
+                badges={badges}
+                onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
-                className="nodrag nowheel max-h-[140px] min-h-16 resize-none overflow-y-auto border-none p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
               />
 
               <div className="flex items-center justify-between gap-2">
@@ -197,7 +198,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
                   <Button
                     size="sm"
                     className="nodrag rounded-full px-5"
-                    disabled={generating || !gen.prompt.trim()}
+                    disabled={generating || !resolvedPrompt}
                     onClick={handleGenerate}
                   >
                     {generating && <Loader2 className="animate-spin" />}

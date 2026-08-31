@@ -2,6 +2,7 @@
 
 import {
   DEFAULT_IMAGE_GEN_DATA,
+  DEFAULT_TEXT_NODE_DATA,
   DEFAULT_VIDEO_GEN_DATA,
   GROUP_NODE_TYPE,
   IMAGE_GEN_NODE_TYPE,
@@ -9,6 +10,7 @@ import {
   type MediaNodeData,
   type Project,
   type ProjectGraph,
+  TEXT_NODE_TYPE,
   VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import {
@@ -57,6 +59,7 @@ import { ImageGenNode } from "./image-gen-node";
 import { MediaNode } from "./media-node";
 import { type CanvasMode, NodePalette } from "./node-palette";
 import { SelectionToolbar } from "./selection-toolbar";
+import { TextNode } from "./text-node";
 import { VideoGenNode } from "./video-gen-node";
 import "@xyflow/react/dist/style.css";
 
@@ -67,6 +70,7 @@ const SOURCE_CAPABLE_TYPES = new Set<string>([
   MEDIA_NODE_TYPE,
   IMAGE_GEN_NODE_TYPE,
   VIDEO_GEN_NODE_TYPE,
+  TEXT_NODE_TYPE,
 ]);
 
 // 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
@@ -75,6 +79,7 @@ const NODE_TYPES = {
   [GROUP_NODE_TYPE]: GroupNode,
   [IMAGE_GEN_NODE_TYPE]: ImageGenNode,
   [VIDEO_GEN_NODE_TYPE]: VideoGenNode,
+  [TEXT_NODE_TYPE]: TextNode,
 };
 
 type CanvasEditorProps = {
@@ -197,6 +202,10 @@ export function CanvasEditor({
   const handleAddVideoGen = useCallback(
     () =>
       addGenNode(VIDEO_GEN_NODE_TYPE, DEFAULT_VIDEO_GEN_DATA as unknown as Record<string, unknown>),
+    [addGenNode],
+  );
+  const handleAddText = useCallback(
+    () => addGenNode(TEXT_NODE_TYPE, DEFAULT_TEXT_NODE_DATA as unknown as Record<string, unknown>),
     [addGenNode],
   );
 
@@ -478,6 +487,7 @@ export function CanvasEditor({
                 onModeChange={setMode}
                 onAddImageGen={handleAddImageGen}
                 onAddVideoGen={handleAddVideoGen}
+                onAddText={handleAddText}
                 onPickFiles={handlePickFiles}
                 canUndo={history.canUndo}
                 canRedo={history.canRedo}

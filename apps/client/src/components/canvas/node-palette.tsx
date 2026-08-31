@@ -5,6 +5,7 @@ import {
   Hand,
   MousePointer2,
   Redo2,
+  Type,
   Undo2,
   Upload,
   WandSparkles,
@@ -34,6 +35,7 @@ type NodePaletteProps = {
   onModeChange: (mode: CanvasMode) => void;
   onAddImageGen: () => void;
   onAddVideoGen: () => void;
+  onAddText: () => void;
   onPickFiles: (files: File[]) => void;
   canUndo: boolean;
   canRedo: boolean;
@@ -46,6 +48,7 @@ export function NodePalette({
   onModeChange,
   onAddImageGen,
   onAddVideoGen,
+  onAddText,
   onPickFiles,
   canUndo,
   canRedo,
@@ -81,6 +84,18 @@ export function NodePalette({
         <TooltipContent side="top">
           <p className="font-medium">视频生成</p>
           <p className="opacity-75">连参考图 / 视频 / 音频，seedance 出片</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onAddText} aria-label="添加文本节点">
+            <Type />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="font-medium">文本</p>
+          <p className="opacity-75">提示词片段，连给生成节点按位置插入</p>
         </TooltipContent>
       </Tooltip>
 

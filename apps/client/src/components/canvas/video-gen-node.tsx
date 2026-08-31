@@ -50,12 +50,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeName } from "./node-name";
+import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 type ReferenceMedia = { kind: MediaKind; url: string };
 
@@ -95,6 +95,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
+  const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
   const refs = sources
     .map((node) => referenceMediaOf(node))
     .filter((item): item is ReferenceMedia => item !== null);
@@ -121,7 +122,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
         json: {
           version: gen.version,
           mode: gen.mode,
-          prompt: gen.prompt.trim(),
+          prompt: resolvedPrompt,
           imageList: imageRefs.map((item) => item.url),
           videoList: videoRefs.map((item) => item.url),
           audioList: audioRefs.map((item) => item.url),
@@ -196,11 +197,11 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
               <ReferenceChips refs={[...imageRefs, ...videoRefs, ...audioRefs]} frames={isFrames} />
 
-              <Textarea
+              <PromptEditor
                 value={gen.prompt}
-                onChange={(event) => updateNodeData(id, { prompt: event.target.value })}
+                badges={badges}
+                onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
-                className="nodrag nowheel max-h-[140px] min-h-16 resize-none overflow-y-auto border-none p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
               />
 
               <div className="flex items-center justify-between gap-2">
@@ -213,7 +214,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
                   <Button
                     size="sm"
                     className="nodrag rounded-full px-5"
-                    disabled={generating || !gen.prompt.trim()}
+                    disabled={generating || !resolvedPrompt}
                     onClick={handleGenerate}
                   >
                     {generating && <Loader2 className="animate-spin" />}
