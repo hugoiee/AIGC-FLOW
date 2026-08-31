@@ -32,3 +32,23 @@ export const settings = sqliteTable("settings", {
 });
 
 export type SettingRow = typeof settings.$inferSelect;
+
+/** 生成请求流水，成本核算用。每次转发内网 /aigc 都记一条，成功失败都记 */
+export const generations = sqliteTable("generations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** image | video */
+  kind: text("kind").notNull(),
+  /** 发给内网接口的完整请求体 JSON（req_from 也在里面，核对来源用） */
+  payload: text("payload").notNull(),
+  /** success | error */
+  status: text("status").notNull(),
+  /** 失败原因，成功为 null */
+  error: text("error"),
+  /** 生成结果地址，失败为 null */
+  resultUrl: text("result_url"),
+  /** 视频请求的时长（秒），-1 表示自动；图像为 null */
+  durationSeconds: integer("duration_seconds"),
+  createdAt: text("created_at").notNull().default(isoNow),
+});
+
+export type GenerationRow = typeof generations.$inferSelect;

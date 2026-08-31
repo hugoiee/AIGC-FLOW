@@ -8,6 +8,8 @@ import {
 } from "@aigc-flow/shared";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { db } from "../db";
+import { generations } from "../db/schema";
 import { getAppSettings } from "../db/settings";
 
 /** 内网 /aigc 的返回结构（docs/接口文档.md） */
@@ -50,6 +52,25 @@ async function callAigc(
   return { url };
 }
 
+/** 记一条生成流水（成功失败都记），统计面板和成本核算用 */
+function recordGeneration(
+  kind: "image" | "video",
+  payload: Record<string, unknown>,
+  outcome: { url: string } | { message: string },
+  durationSeconds?: number,
+) {
+  db.insert(generations)
+    .values({
+      kind,
+      payload: JSON.stringify(payload),
+      status: "url" in outcome ? "success" : "error",
+      error: "message" in outcome ? outcome.message : null,
+      resultUrl: "url" in outcome ? outcome.url : null,
+      durationSeconds: durationSeconds ?? null,
+    })
+    .run();
+}
+
 export const generateRoute = new Hono()
   .post("/", zValidator("json", generateImageRequestSchema), async (c) => {
     const input = c.req.valid("json");
@@ -76,6 +97,7 @@ export const generateRoute = new Hono()
     };
 
     const outcome = await callAigc(generateBaseUrl, payload);
+    recordGeneration("image", payload, outcome);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });
   })
@@ -109,6 +131,7 @@ export const generateRoute = new Hono()
     };
 
     const outcome = await callAigc(generateBaseUrl, payload);
+    recordGeneration("video", payload, outcome, input.duration);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });
   });

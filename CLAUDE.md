@@ -29,6 +29,9 @@ image_list / video_list / audio_list），结果显示在节点上方，右侧 s
 （`node-picker-menu.tsx`，不能连的类型禁用，选择后原地建节点并接线，期间虚线不消失）；
 右键画布空白也弹这个菜单（因此选择模式的平移只留中键，右键让给了菜单）。
 连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。
+每次转发 `/aigc` 都在 `generations` 表记一条流水（完整请求 JSON、状态、
+视频时长），右上角的数据统计面板（`stats-dialog.tsx`）汇总次数与视频总秒数
+（自动时长的不计入、单独计数），供成本核算；`GET /api/generations`。
 音频生成节点尚未开发。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。

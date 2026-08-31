@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ProjectName } from "@/components/canvas/project-name";
 import { SaveIndicator } from "@/components/canvas/save-indicator";
 import { SettingsDialog } from "@/components/settings-dialog";
+import { StatsDialog } from "@/components/stats-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -66,6 +67,7 @@ export function CanvasInfoGroup({
 export function CanvasActionGroup() {
   return (
     <div className={GROUP}>
+      <StatsDialog />
       <ThemeToggle />
       <SettingsDialog />
     </div>
