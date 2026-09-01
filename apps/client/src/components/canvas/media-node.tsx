@@ -6,6 +6,7 @@ import { CircleAlert, FileImage, FileVideo, Loader2, Music, Plus } from "lucide-
 import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "react";
 import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
+import { guardVideoDrag } from "@/lib/video-drag";
 import { NodeName } from "./node-name";
 import { NodeSizeLabel, sizePatchOf } from "./node-size";
 
@@ -215,7 +216,6 @@ function MediaBody({
 
   if (media.kind === "video") {
     return (
-      // nodrag 让指针事件留给播放器，否则一点播放就变成拖动节点
       <video
         src={media.url}
         controls
@@ -224,7 +224,9 @@ function MediaBody({
           onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight, true)
         }
         onError={() => setLoadFailed(true)}
-        className="nodrag size-full object-fill"
+        // nodrag 由它按指针位置动态挂：画面上放行拖节点，控件条上让给播放器
+        onPointerDownCapture={guardVideoDrag}
+        className="size-full object-fill"
       >
         <track kind="captions" />
       </video>

@@ -52,6 +52,7 @@ import { api } from "@/lib/api";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
+import { guardVideoDrag } from "@/lib/video-drag";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeName } from "./node-name";
 import { NodeSizeLabel, sizePatchOf } from "./node-size";
@@ -259,7 +260,9 @@ function ResultArea({
           onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
         }
         onError={() => setLoadFailed(true)}
-        className="nodrag w-full"
+        // nodrag 由它按指针位置动态挂：画面上放行拖节点，控件条上让给播放器
+        onPointerDownCapture={guardVideoDrag}
+        className="w-full"
       >
         <track kind="captions" />
       </video>

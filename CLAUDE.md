@@ -157,6 +157,13 @@ export type AppType = typeof app;
 - 移动模式要「哪儿都能拖」，光设 `nodesDraggable={false}` 不够：节点本身要靠
   `elementsSelectable={false}` 让 React Flow 把它设成 `pointer-events:none`，
   多选时盖在选区上那层 `.react-flow__nodesselection-rect` 还得另外单独让开。
+- **视频节点的 `nodrag` 要按指针位置动态挂**（`lib/video-drag.ts`）。`<video controls>`
+  不挂 `nodrag` 的话拖进度条会变成拖节点；整块都挂上则节点没地方可拖 —— 表现就是
+  占位符能拖、出了视频反而拖不动。原生控件在 shadow DOM 里、事件重定向到 `<video>`
+  本身，靠 `event.target` 分不出点的是画面还是控件，只能按 `offsetY` 分。
+  必须走 **capture 阶段**（React Flow 的拖拽监听在节点元素上、冒泡阶段，
+  合成事件挂在根容器，capture 才来得及）且**同步改 DOM 类名**（setState 是异步的，
+  等重渲染完这次 pointerdown 早处理完了）。`offsetY` 不受画布缩放影响，不用除 zoom。
 - 注册了自定义组件的内置类型（比如 `group`）仍然会套 React Flow 的默认样式，
   `.react-flow__node-group` 的白底 / 边框 / padding 要在 `globals.css` 里清掉。
 - **「节点身上有没有素材」只有一份判断**：`lib/node-media.ts` 的 `nodeMediaOf()`，
