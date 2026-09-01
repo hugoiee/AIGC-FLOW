@@ -1,8 +1,16 @@
 import type { AppSettings, MediaKind, UploadedFile } from "@aigc-flow/shared";
 import { messageOf, snippet } from "../lib/upstream";
 
-/** 内网上传服务的成功返回（docs/接口文档.md）。失败时形状不定，现挖 */
-type UploadResponse = { urls?: string[] };
+/**
+ * 内网上传服务的返回。实测形状是 { files: [{ url, status, ... }], success }，
+ * 和 docs/接口文档.md 里写的 { urls: [...] } 对不上 —— 两种都认：音频那个
+ * 端点（/api/upload-media）还没实测过，不排除它就是文档里那个形状。
+ */
+type UploadResponse = {
+  files?: Array<{ url?: string; filename?: string; status?: string; error?: string }>;
+  urls?: string[];
+  success?: boolean;
+};
 
 /**
  * 内网接口按媒体种类分了两个端点：音频与图像/视频各一个完整地址，
@@ -15,8 +23,7 @@ function remoteEndpoint(kind: MediaKind, settings: AppSettings): string {
 /**
  * 转发到内网上传服务。表单要带两个字段：files（复数，别写成 file）和
  * req_from —— 和 /aigc 生成接口是同一个来源标识，缺了会被拒。
- * 它的返回是 { urls: ["https://...bcebos.com/xxx.png"] }，
- * 这里取出 URL 包装成本服务的 UploadedFile。
+ * 返回里取出素材地址，包装成本服务的 UploadedFile。
  * 内网接口是同步阻塞式的（发出后一直等到处理完才返回），不设超时。
  */
 export async function storeFile(
@@ -52,7 +59,9 @@ export async function storeFile(
     throw new Error(`内网上传服务返回的不是 JSON：${snippet(text) || "（空响应）"}`);
   }
 
-  const url = body.urls?.[0];
+  const url = resultUrlOf(body);
+  // filename 回原始文件名，不用内网那个内容哈希名：这是本服务自己的契约，
+  // 前端靠它把结果和上传的文件对号
   if (url) return { filename: file.name, url, status: "uploaded" };
 
   // 2xx 却没拿到地址。原始响应必须原样打出来 —— 只报一句「未返回文件地址」
@@ -62,18 +71,32 @@ export async function storeFile(
 }
 
 /**
- * 2xx 但没有地址时的报错文案。分三种情况说，因为排查方向完全不同：
- * urls 是空数组 = 请求到了但文件没进去（多半表单字段名不对）；
- * 带了 message 一类的字段 = 服务端主动拒绝，直接透传它的话；
- * 都不是 = 返回结构和文档对不上，把原始响应甩出来。
+ * 取素材地址。内网的 status 有 success / duplicate 等好几种，duplicate 是
+ * 按内容哈希去重命中了已有文件，照样给地址、照样算成功，所以这里不枚举
+ * 状态白名单 —— 认地址不认状态，拿得到 url 就算成功。
+ */
+function resultUrlOf(body: UploadResponse): string | undefined {
+  return body.files?.[0]?.url || body.urls?.[0];
+}
+
+/**
+ * 2xx 但没有地址时的报错文案。分几种情况说，因为排查方向完全不同：
+ * 带了 error / message 一类的字段 = 服务端主动拒绝，直接透传它的话；
+ * 只有个 status = 至少把状态词报出来；
+ * 结果数组是空的 = 请求到了但文件没进去（多半表单字段名不对）；
+ * 都不是 = 返回结构又变了，把原始响应甩出来。
  */
 function noUrlMessage(body: UploadResponse, text: string): string {
-  if (Array.isArray(body.urls)) {
-    return "内网上传服务返回了空的 urls，文件没被收下（多半是表单字段名或文件本身不合要求）";
-  }
+  const entry = body.files?.[0];
 
-  const detail = messageOf(body);
+  const detail = messageOf(entry) || messageOf(body);
   if (detail) return `内网上传服务拒绝了这个文件：${detail}`;
+
+  if (entry?.status) return `内网上传服务没给地址，状态是 ${entry.status}`;
+
+  if (Array.isArray(body.files) || Array.isArray(body.urls)) {
+    return "内网上传服务返回了空结果，文件没被收下（多半是表单字段名或文件本身不合要求）";
+  }
 
   return `内网上传服务未返回文件地址：${snippet(text) || "（空响应）"}`;
 }

@@ -144,10 +144,13 @@ export type AppType = typeof app;
 - 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
   内网 IP 不进前端 bundle、凭据只在服务端填一处）。上传就是这个模式的样板：
   前端只调本服务的 `/api/uploads`，服务端转发到内网上传服务
-  （图/视频走 `/api/upload`，音频走 `/api/upload-media`，返回 `{ urls: [...] }`，
-  见 `docs/接口文档.md`）。**转发出去的表单字段是 `files`（复数）加 `req_from`**，
-  写成 `file` 或漏掉 `req_from` 内网都会拒；本服务自己的 `/api/uploads` 两种
-  字段名都收。内网根地址不在 .env 里，存 `settings` 表
+  （图/视频走 `/api/upload`，音频走 `/api/upload-media`，见 `docs/接口文档.md`）。
+  **转发出去的表单字段是 `files`（复数）加 `req_from`**，写成 `file` 或漏掉
+  `req_from` 内网都会拒；本服务自己的 `/api/uploads` 两种字段名都收。
+  **内网的返回是 `{ files: [{ url, status }], success }`，不是文档里写的
+  `{ urls: [...] }`**，而且 `status` 有 `duplicate`（按内容哈希去重命中了
+  已有文件，照样给地址，算成功）—— 所以解析时认地址不认状态，别去枚举
+  状态白名单。内网根地址不在 .env 里，存 `settings` 表
   （画布右上角设置面板可改，默认值在 `packages/shared/src/settings.ts`）。
 
 ## 下一步
