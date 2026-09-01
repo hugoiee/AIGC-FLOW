@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import { db } from "../db";
 import { generations } from "../db/schema";
 import { getAppSettings } from "../db/settings";
+import { messageOf, snippet } from "../lib/upstream";
 
 /** 内网 /aigc 的返回结构（docs/接口文档.md） */
 type AigcResponse = {
@@ -43,7 +44,7 @@ async function callAigc(
 
   if (!res.ok) {
     // 非 200 时把响应体带出来，别让用户只看到一个状态码
-    const text = (await res.text().catch(() => "")).slice(0, 300);
+    const text = snippet(await res.text().catch(() => ""));
     return { message: `内网生成服务返回 ${res.status}${text ? `：${text}` : ""}` };
   }
 
@@ -59,16 +60,12 @@ async function callAigc(
 
 /** 把内网返回的 result.error 提炼成一句人能读的话，透传给前端和流水表 */
 function errorDetailOf(error: unknown): string {
+  const detail = messageOf(error);
+  if (detail) return detail;
   if (!error) return "";
-  if (typeof error === "string") return error;
   if (typeof error === "object") {
-    const record = error as Record<string, unknown>;
-    for (const key of ["message", "msg", "error", "detail", "reason"]) {
-      const value = record[key];
-      if (typeof value === "string" && value) return value;
-    }
     const serialized = JSON.stringify(error);
-    return serialized === "{}" ? "" : serialized.slice(0, 300);
+    return serialized === "{}" ? "" : snippet(serialized);
   }
   return String(error);
 }
