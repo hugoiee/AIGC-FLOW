@@ -141,6 +141,16 @@ export type AppType = typeof app;
   `.react-flow__node-group` 的白底 / 边框 / padding 要在 `globals.css` 里清掉。
 - 浏览器只放行一个页面的第一个自动下载，之后的会弹窗让用户确认。批量下载就是
   逐个触发 + 让用户点一次「允许」，**不要为了绕过它去做服务端打包**。
+- **上传返回和生成返回是两种地址，别混着处理**。上传的是裸地址
+  （`https://bd-spu-img.bj.bcebos.com/aigc_models_upload_img/<内容哈希>.png`），
+  生成的带百度云签名 query：
+  `https://wizstar-model-proxy.bj.bcebos.com/<hash>.png?authorization=bce-auth-v1/<AK>/<签发时间>/-1/host/<签名>`。
+  几条推论：**① 拿后缀、比对地址一律先 `split("?")[0]`**（`lib/download.ts` 的
+  `withExtension` 已经这么做），直接 `endsWith(".png")` 会漏；② 有效期那段是
+  `-1`（不过期），所以生成结果的地址可以照常存进 `projects.graph`，不用做刷新
+  或代理缓存；③ host 换了但仍是 `.bcebos.com` 子域，`routes/uploads.ts` 的
+  `isAllowedSource` 后缀匹配能放行，批量下载不用改；④ 这个地址**带签名凭据**
+  （AK + signature），别粘进仓库里的任何文件、issue 或提交信息。
 - 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
   内网 IP 不进前端 bundle、凭据只在服务端填一处）。上传就是这个模式的样板：
   前端只调本服务的 `/api/uploads`，服务端转发到内网上传服务
@@ -158,6 +168,10 @@ export type AppType = typeof app;
 - 嵌套编组：目前选区含编组或组内节点时按钮置灰，要支持得处理多层坐标变换、
   递归解组、递归收集组内素材。
 - 音频生成节点；图像生成的多张结果（n>1）与结果历史。
+- 生成结果显示分辨率：媒体节点已有这套（`media-node.tsx` 靠 `onLoad` 读
+  `naturalWidth/naturalHeight` 写进节点 data，信息条显示 `宽 × 高`），生成节点
+  照搬即可 —— 生成地址不过期，`<img>` 读原始尺寸也不需要 CORS（只有往 canvas
+  里读像素才会污染）。
 - 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
   `{result:{content:[url],status:"success"}}`），把设置面板的生成地址指过去即可。
