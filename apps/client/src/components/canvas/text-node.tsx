@@ -28,9 +28,28 @@ export function TextNode({ id, data, selected }: NodeProps) {
   const [editing, setEditing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  /**
+   * 编辑期间输入框由这份本地草稿驱动，而不是直接绑 data.text。
+   *
+   * 中文输入法的坑：绑 data.text 的话，值要绕经 React Flow 的 store 再回流，
+   * 这一圈是滞后的，React 一旦发现 value 属性和 DOM 里的值对不上就会写回去，
+   * 而**在组词过程中改写 value 会摧毁 composition 区** —— 浏览器把下一次组词
+   * 当成新文本插到光标处，于是「中文」会打成 zzhzhozhonzhong中wwewen文。
+   * 本地 state 是同一次渲染内更新的，value 永远等于 DOM 里的值，React 不会写回。
+   */
+  const [draft, setDraft] = useState(text.text);
+  /** 组词进行中。中间态（拼音）不写进 graph，见 flush */
+  const composingRef = useRef(false);
+
   useEffect(() => {
     if (editing) textareaRef.current?.focus();
   }, [editing]);
+
+  /** 把输入框里的值写回节点。组词中间态不写 —— 拼音会顺着连线跑进生成节点的徽章 */
+  function flush(value: string) {
+    setDraft(value);
+    if (!composingRef.current) updateNodeData(id, { text: value });
+  }
 
   return (
     <>
@@ -61,14 +80,33 @@ export function TextNode({ id, data, selected }: NodeProps) {
           "size-full rounded-xl border bg-card p-3 shadow-sm",
           selected && "outline outline-1 outline-[#3b82f6]",
         )}
-        onDoubleClick={() => setEditing(true)}
+        onDoubleClick={() => {
+          // 草稿在进编辑这一刻取一次就够了。不能放到 effect 里跟着 text.text 走，
+          // 那样每次回流都会重置草稿，正是上面要避开的那件事
+          setDraft(text.text);
+          setEditing(true);
+        }}
       >
         {editing ? (
           <Textarea
             ref={textareaRef}
-            value={text.text}
-            onChange={(event) => updateNodeData(id, { text: event.target.value })}
-            onBlur={() => setEditing(false)}
+            value={draft}
+            onChange={(event) => flush(event.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            // compositionend 和最后那次 input 的先后顺序各浏览器不一致，
+            // 所以两头都写一次：先落地的那次生效，另一次是同值幂等
+            onCompositionEnd={(event) => {
+              composingRef.current = false;
+              flush(event.currentTarget.value);
+            }}
+            onBlur={(event) => {
+              // 组词没结束就失焦（点了别处）时，把已经上屏的部分收下
+              composingRef.current = false;
+              flush(event.currentTarget.value);
+              setEditing(false);
+            }}
             placeholder="输入提示词片段…"
             className="nodrag nowheel size-full min-h-0 resize-none border-none p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
           />

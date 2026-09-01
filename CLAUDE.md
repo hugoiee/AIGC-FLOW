@@ -118,6 +118,16 @@ export type AppType = typeof app;
   不要手写 SQL 或直接改 `drizzle/` 里的文件。
 - 新增时间字段一律用 `schema.ts` 里的 `isoNow`（带 Z 的 ISO 8601 UTC），
   **不要用 `CURRENT_TIMESTAMP`** —— 它没有时区标记，前端 `new Date()` 会按本地时区解析而偏移。
+- **画布上的输入框不要把 `value` 直接绑到 node data**，否则中文输入法必坏。
+  值绕经 React Flow 的 store 再回流是滞后的，React 一旦发现 `value` 属性和 DOM
+  里的值对不上就会写回去，而**组词过程中改写 `value` 会摧毁 composition 区** ——
+  浏览器把下一次组词当成新文本插到光标处，「中文」会打成 `zzhzhozhonzhong中wwewen文`。
+  正确写法：编辑期间用本地 `draft` state 驱动 `value`（同一次渲染内更新，值永远
+  等于 DOM，React 不会写回），进编辑时取一次初值，`onChange` 再同步给 node data；
+  并用 `compositionstart/end` 把组词中间态挡在 graph 之外（拼音会顺着连线跑进
+  生成节点的徽章）。`text-node.tsx` 是样板，`node-name` / `project-name` 同款。
+  contentEditable 的 `prompt-editor.tsx` 不受影响 —— 它回写的就是 `serialize(el)`，
+  回流值和 DOM 天然一致，那个 `serialize(el) !== value` 的判断不会成立。
 - 参与 SSR 的工具函数必须是纯函数（如 `project-cover.tsx` 的 `hashName`），
   不要用 `Math.random()` / `Date.now()`，否则 hydration 不匹配。
 - **`setState` 的 updater 必须是纯函数**，任何副作用（写历史栈、发请求、读快照）
