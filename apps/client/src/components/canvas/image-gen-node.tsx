@@ -4,14 +4,11 @@ import {
   GPT_QUALITIES,
   GPT_SIZE_PRESETS,
   gptSizeOf,
-  IMAGE_GEN_NODE_TYPE,
   IMAGE_GEN_NODE_WIDTH,
   IMAGE_MODELS,
   type ImageGenNodeData,
   imageModelOf,
   MAX_REFERENCE_IMAGES,
-  MEDIA_NODE_TYPE,
-  type MediaNodeData,
   NANO_ASPECT_RATIOS,
   NANO_IMAGE_SIZES,
 } from "@aigc-flow/shared";
@@ -40,6 +37,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
@@ -58,19 +56,13 @@ function currentAspect(gen: ImageGenNodeData): number {
 }
 
 /**
- * 从上游节点里取出能作为参考图的 URL：
- * 图片媒体节点的 url，或另一个图像生成节点的结果图 —— 生成结果可以链式引用。
+ * 从上游节点里取出能作为参考图的 URL：图片媒体节点的 url，或另一个
+ * 图像生成节点的结果图 —— 生成结果可以链式引用。图像模型只吃图，
+ * 所以在共用的 nodeMediaOf 之上再按种类筛一道。
  */
-export function referenceUrlOf(node: { type?: string; data: unknown }): string | null {
-  if (node.type === MEDIA_NODE_TYPE) {
-    const media = node.data as MediaNodeData;
-    return media.kind === "image" && media.status === "ready" && media.url ? media.url : null;
-  }
-  if (node.type === IMAGE_GEN_NODE_TYPE) {
-    const gen = node.data as ImageGenNodeData;
-    return gen.status === "ready" && gen.resultUrl ? gen.resultUrl : null;
-  }
-  return null;
+export function referenceUrlOf(node: { id: string; type?: string; data: unknown }): string | null {
+  const media = nodeMediaOf(node);
+  return media?.kind === "image" ? media.url : null;
 }
 
 export function ImageGenNode({ id, data, selected }: NodeProps) {

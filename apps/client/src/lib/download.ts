@@ -1,5 +1,5 @@
-import { MEDIA_NODE_TYPE, type MediaNodeData } from "@aigc-flow/shared";
 import type { Node } from "@xyflow/react";
+import { nodeMediaOf } from "@/lib/node-media";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -23,18 +23,23 @@ function withExtension(label: string, url: string): string {
 }
 
 /**
- * 选区里真正能下载的素材。
- * 普通节点没有文件，上传中 / 上传失败的媒体节点也还没有地址，都要排除。
+ * 选区里真正能下载的素材：上传的媒体，加上生成节点已经出结果的产出。
+ * 判断走 lib/node-media.ts 的 nodeMediaOf —— 文本 / 编组本来就没有文件，
+ * 上传中、生成中、失败的也都还没有地址，那边统一排除掉。
  */
 export function downloadableMedia(nodes: Node[], selectedIds: string[]): DownloadItem[] {
   const ids = new Set(selectedIds);
   const items: DownloadItem[] = [];
 
   for (const node of nodes) {
-    if (!ids.has(node.id) || node.type !== MEDIA_NODE_TYPE) continue;
-    const media = node.data as unknown as MediaNodeData;
-    if (media.status !== "ready" || !media.url) continue;
-    items.push({ url: media.url, filename: withExtension(media.label, media.url) });
+    if (!ids.has(node.id)) continue;
+
+    const media = nodeMediaOf(node);
+    if (!media) continue;
+
+    // 节点名是可以双击改的，存盘名按它来（后缀由地址补，见 withExtension）
+    const label = (node.data as { label?: string }).label ?? "素材";
+    items.push({ url: media.url, filename: withExtension(label, media.url) });
   }
 
   return items;

@@ -2,17 +2,12 @@
 
 import {
   AUTO_DURATION,
-  IMAGE_GEN_NODE_TYPE,
   IMAGE_GEN_NODE_WIDTH,
-  type ImageGenNodeData,
   MAX_AUDIO_REFS,
   MAX_FRAME_IMAGES,
   MAX_REFERENCE_IMAGES,
   MAX_VIDEO_REFS,
-  MEDIA_NODE_TYPE,
   type MediaKind,
-  type MediaNodeData,
-  VIDEO_GEN_NODE_TYPE,
   VIDEO_MODES,
   VIDEO_RATIOS,
   VIDEO_VERSIONS,
@@ -55,44 +50,12 @@ import { Slider } from "@/components/ui/slider";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeName } from "./node-name";
 import { NodeSizeLabel, sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
-
-/** id 是源节点 id：同一张图可以连入多次，React key 必须用它而不是 url */
-type ReferenceMedia = { id: string; kind: MediaKind; url: string };
-
-/**
- * 从上游节点里取出参考素材及其种类：媒体节点（图 / 视频 / 音频）、
- * 图像生成节点的结果图、视频生成节点的结果视频，都能作为参考。
- */
-function referenceMediaOf(node: {
-  id: string;
-  type?: string;
-  data: unknown;
-}): ReferenceMedia | null {
-  if (node.type === MEDIA_NODE_TYPE) {
-    const media = node.data as MediaNodeData;
-    return media.status === "ready" && media.url
-      ? { id: node.id, kind: media.kind, url: media.url }
-      : null;
-  }
-  if (node.type === IMAGE_GEN_NODE_TYPE) {
-    const gen = node.data as ImageGenNodeData;
-    return gen.status === "ready" && gen.resultUrl
-      ? { id: node.id, kind: "image", url: gen.resultUrl }
-      : null;
-  }
-  if (node.type === VIDEO_GEN_NODE_TYPE) {
-    const gen = node.data as VideoGenNodeData;
-    return gen.status === "ready" && gen.resultUrl
-      ? { id: node.id, kind: "video", url: gen.resultUrl }
-      : null;
-  }
-  return null;
-}
 
 /** 占位区宽高比跟随所选比例；adaptive（自适应）没有具体值，退回 16:9 */
 function currentAspect(gen: VideoGenNodeData): number {
@@ -114,8 +77,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const sources = useNodesData(connections.map((connection) => connection.source));
   const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
   const refs = sources
-    .map((node) => referenceMediaOf(node))
-    .filter((item): item is ReferenceMedia => item !== null);
+    .map((node) => nodeMediaOf(node))
+    .filter((item): item is NodeMedia => item !== null);
 
   const isFrames = gen.mode === "first_last_frame";
   // 按种类分流到接口的三个入参；首尾帧模式只取前两张图（首帧、尾帧），不支持参考视频
@@ -347,7 +310,7 @@ function ResultArea({
 const CHIP_ICON = { image: ImageIcon, video: FileVideo, audio: Music } as const;
 
 /** 已连素材的实体格：图片缩略图，视频 / 音频显示种类图标 */
-function RefChip({ kind, url }: Pick<ReferenceMedia, "kind" | "url">) {
+function RefChip({ kind, url }: Pick<NodeMedia, "kind" | "url">) {
   return (
     <div className="flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 text-muted-foreground">
       {kind === "image" ? (
@@ -395,7 +358,7 @@ function RefPlaceholder({
  * 首尾帧模式：固定「首帧」「尾帧」两格（按连入顺序取前两张图），
  * 视频参考不支持不显示，音频照常。
  */
-function ReferenceChips({ refs, frames }: { refs: ReferenceMedia[]; frames: boolean }) {
+function ReferenceChips({ refs, frames }: { refs: NodeMedia[]; frames: boolean }) {
   const images = refs.filter((item) => item.kind === "image");
   const videos = refs.filter((item) => item.kind === "video");
   const audios = refs.filter((item) => item.kind === "audio");
