@@ -150,14 +150,28 @@
   pointer-events: none;
 }
 
-/* 选择模式：左键是框选，光标必须是普通箭头。
+/* 选择模式：左键是框选，光标是普通箭头。
    selectionOnDrag 会让 React Flow 给 pane 挂 .selection（cursor:pointer，一只手），
-   panOnDrag 为真值时还会挂 .draggable（cursor:grab），两个都要盖掉。
-   选择器末尾带上那个类是为了压过它（三个类 vs 两个类），
+   要盖掉。选择器末尾带上那个类是为了压过它（三个类 vs 两个类），
    不依赖 globals.css 和 React Flow 样式表谁先谁后。 */
-[data-canvas-mode="select"] .react-flow__pane.selection,
-[data-canvas-mode="select"] .react-flow__pane.draggable {
+[data-canvas-mode="select"] .react-flow__pane.selection {
   cursor: default;
+}
+
+/* 选择模式下平移画布的光标。两条路进平移，React Flow 挂的类不一样：
+   - **按住空格**：panActivationKeyCode 默认就是 Space，按下后 panOnDrag 变成
+     true，pane 挂上 .draggable，同时 isSelecting 转 false（.selection 会摘掉）；
+   - **按住中键**：panOnDrag 是 [1]，而 React Flow 里
+     `draggable = panOnDrag === true || panOnDrag.includes(0)`，[1] 两条都不满足，
+     所以**中键全程不挂 .draggable**，只有真的拖起来才挂 .dragging。
+   所以「张开的手」只能看 .draggable（= 空格已按住、还没拖），
+   「抓紧的手」看 .dragging（两条路拖动中都有）。
+   三条规则特异性都是 (0,3,0)，靠书写顺序定胜负，.dragging 必须排最后。 */
+[data-canvas-mode="select"] .react-flow__pane.draggable {
+  cursor: grab;
+}
+[data-canvas-mode="select"] .react-flow__pane.dragging {
+  cursor: grabbing;
 }
 
 /* 浅色主题下画布底色压暗一档（#F5F5F5），纯白太刺眼。

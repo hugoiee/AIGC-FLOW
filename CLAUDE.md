@@ -27,7 +27,8 @@ image_list / video_list / audio_list），结果显示在节点上方，右侧 s
 多选资源时选区右侧有浮动连线端点（`floating-connector.tsx`）：落到可接受节点上
 批量连线，落到空白或不能接受的节点上会在松手处弹节点选择菜单
 （`node-picker-menu.tsx`，不能连的类型禁用，选择后原地建节点并接线，期间虚线不消失）；
-右键画布空白也弹这个菜单（因此选择模式的平移只留中键，右键让给了菜单）。
+右键画布空白也弹这个菜单（因此选择模式的平移只剩中键和空格+左键，右键让给了菜单；
+空格是 React Flow 的 `panActivationKeyCode` 默认值，白捡的）。
 连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。
 每次转发 `/aigc` 都在 `generations` 表记一条流水（完整请求 JSON、状态、
 视频时长），右上角的数据统计面板（`stats-dialog.tsx`）汇总次数与视频总秒数
@@ -142,6 +143,14 @@ export type AppType = typeof app;
   生成不出来。这类样式只能写进 `globals.css`，而且**不能包在 `@layer` 里**：
   React Flow 的样式表是未分层的，按 CSS 级联规则未分层永远压过分层。
   现有的 `[data-canvas-mode="move"]` 那几条就是这个原因。
+- **平移光标别只盯着 `.dragging`**：选择模式下两条平移路径挂的类不一样 ——
+  按住空格会让 `panOnDrag` 变成 `true`，pane 挂 `.draggable` 且摘掉 `.selection`；
+  中键是 `panOnDrag={[1]}`，而 React Flow 判 `draggable` 的条件是
+  `panOnDrag === true || panOnDrag.includes(0)`，中键两条都不满足，**全程不挂
+  `.draggable`**。所以「张开的手」只能挂在 `.draggable` 上（空格已按住、还没拖），
+  「抓紧的手」挂 `.dragging`（两条路拖动中都有）。几条规则特异性相同，靠书写顺序
+  定胜负，`.dragging` 必须排最后。拖动中划过节点不用另外处理 —— React Flow 会接管
+  指针，`elementFromPoint` 命中的仍是 pane。
 - 移动模式要「哪儿都能拖」，光设 `nodesDraggable={false}` 不够：节点本身要靠
   `elementsSelectable={false}` 让 React Flow 把它设成 `pointer-events:none`，
   多选时盖在选区上那层 `.react-flow__nodesselection-rect` 还得另外单独让开。
