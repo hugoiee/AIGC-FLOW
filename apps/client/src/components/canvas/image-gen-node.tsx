@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
 import { NodeName } from "./node-name";
+import { NodeSizeLabel, sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
@@ -104,7 +105,13 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
    */
   async function handleGenerate() {
     if (generating) return;
-    updateNodeData(id, { status: "generating", error: undefined });
+    // 清掉上一张的尺寸：新图加载出来之前，信息条不该还挂着旧数字
+    updateNodeData(id, {
+      status: "generating",
+      error: undefined,
+      naturalWidth: undefined,
+      naturalHeight: undefined,
+    });
 
     try {
       const res = await api.api.generate.$post({
@@ -139,13 +146,14 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
     <>
       {selected && (
         <div
-          className="-top-6 pointer-events-none absolute inset-x-0 flex items-center text-xs"
+          className="-top-6 pointer-events-none absolute inset-x-0 flex items-center justify-between gap-4 text-xs"
           style={{ color: GEN_ACCENT }}
         >
           <span className="flex min-w-0 items-center gap-1">
             <WandSparkles className="size-3.5 shrink-0" />
             <NodeName nodeId={id} label={gen.label} />
           </span>
+          <NodeSizeLabel naturalWidth={gen.naturalWidth} naturalHeight={gen.naturalHeight} />
         </div>
       )}
 
@@ -171,7 +179,14 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
-            <ResultArea gen={gen} aspect={currentAspect(gen)} />
+            <ResultArea
+              gen={gen}
+              aspect={currentAspect(gen)}
+              onNaturalSize={(width, height) => {
+                const patch = sizePatchOf(gen, width, height);
+                if (patch) updateNodeData(id, patch);
+              }}
+            />
           </div>
 
           {/* 左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
@@ -237,21 +252,39 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
  * 上方结果区：占位 → 生成中 → 结果图 / 失败。
  * 拉满节点宽度，占位比例跟随图像设置里选的宽高比；结果图按自身比例展示。
  */
-function ResultArea({ gen, aspect }: { gen: ImageGenNodeData; aspect: number }) {
+function ResultArea({
+  gen,
+  aspect,
+  onNaturalSize,
+}: {
+  gen: ImageGenNodeData;
+  aspect: number;
+  onNaturalSize: (width: number, height: number) => void;
+}) {
   // 结果图地址失效（内网结果有有效期）时兜底成占位符，避免破图 + 大段 alt 文字
   const [loadFailed, setLoadFailed] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
   useEffect(() => setLoadFailed(false), [gen.resultUrl]);
 
   if (gen.status === "ready" && gen.resultUrl && !loadFailed) {
+    const src = resizedImageUrl(gen.resultUrl, CANVAS_WIDTH);
+    // 生成结果带签名 query，resizedImageUrl 会原样返回（怕加参数破坏签名），
+    // 所以渲染的就是原图、量出来就是真实尺寸。这里仍按媒体节点那套判一次，
+    // 万一哪天生成地址变成不带签名的裸地址，缩略参数会生效，数就不能信了。
+    const exact = src === gen.resultUrl;
+
     return (
       // biome-ignore lint/performance/noImgElement: 生成结果是任意远程图片，无需 next/image
       <img
-        src={resizedImageUrl(gen.resultUrl, CANVAS_WIDTH)}
+        src={src}
         alt={gen.prompt || gen.label}
         draggable={false}
         loading="lazy"
         decoding="async"
+        onLoad={(event) =>
+          exact &&
+          onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+        }
         onError={() => setLoadFailed(true)}
         // 画布上渲染的是缩略版，双击才在新标签页看全尺寸原图
         onDoubleClick={() => gen.resultUrl && window.open(gen.resultUrl, "_blank")}

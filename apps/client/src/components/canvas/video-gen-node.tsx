@@ -58,6 +58,7 @@ import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeName } from "./node-name";
+import { NodeSizeLabel, sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** id 是源节点 id：同一张图可以连入多次，React key 必须用它而不是 url */
@@ -131,7 +132,13 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   /** 点生成：同图像节点的状态机。内网接口同步阻塞，视频可能要等几分钟 */
   async function handleGenerate() {
     if (generating) return;
-    updateNodeData(id, { status: "generating", error: undefined });
+    // 清掉上一条的尺寸：新视频加载出来之前，信息条不该还挂着旧数字
+    updateNodeData(id, {
+      status: "generating",
+      error: undefined,
+      naturalWidth: undefined,
+      naturalHeight: undefined,
+    });
 
     try {
       const res = await api.api.generate.video.$post({
@@ -176,6 +183,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             <Clapperboard className="size-3.5 shrink-0" />
             <NodeName nodeId={id} label={gen.label} />
           </span>
+          <NodeSizeLabel naturalWidth={gen.naturalWidth} naturalHeight={gen.naturalHeight} />
         </div>
       )}
 
@@ -197,7 +205,14 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
-            <ResultArea gen={gen} aspect={currentAspect(gen)} />
+            <ResultArea
+              gen={gen}
+              aspect={currentAspect(gen)}
+              onNaturalSize={(width, height) => {
+                const patch = sizePatchOf(gen, width, height);
+                if (patch) updateNodeData(id, patch);
+              }}
+            />
           </div>
 
           <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
@@ -256,7 +271,15 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 }
 
 /** 上方结果区：占位（播放键，对齐设计稿视频占位符）→ 生成中 → 结果视频 / 失败 */
-function ResultArea({ gen, aspect }: { gen: VideoGenNodeData; aspect: number }) {
+function ResultArea({
+  gen,
+  aspect,
+  onNaturalSize,
+}: {
+  gen: VideoGenNodeData;
+  aspect: number;
+  onNaturalSize: (width: number, height: number) => void;
+}) {
   const [loadFailed, setLoadFailed] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
   useEffect(() => setLoadFailed(false), [gen.resultUrl]);
@@ -267,7 +290,11 @@ function ResultArea({ gen, aspect }: { gen: VideoGenNodeData; aspect: number }) 
       <video
         src={gen.resultUrl}
         controls
+        // 视频地址不走缩略参数，metadata 里的 videoWidth 就是原始尺寸
         preload="metadata"
+        onLoadedMetadata={(event) =>
+          onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
+        }
         onError={() => setLoadFailed(true)}
         className="nodrag w-full"
       >

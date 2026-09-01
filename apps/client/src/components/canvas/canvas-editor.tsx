@@ -500,16 +500,22 @@ export function CanvasEditor({
   );
 
   /**
-   * 上传完成 / 失败时回填。
+   * 上传完成 / 失败、或量到原始尺寸时回填。
    * 用 setNodes 的函数式写法读最新值：上传异步，回调触发时闭包里的 nodes 早过期了。
    * 这里不入历史栈 —— 回填是上传的结果，不是用户的一次操作，
    * 否则按 Cmd+Z 会把节点退回"上传中"这种没意义的状态。
    */
   const handleUploadNodeSettled = useCallback(
-    (nodeId: string, patch: Partial<MediaNodeData>) => {
+    (nodeId: string, patch: Partial<MediaNodeData>, size?: { width: number; height: number }) => {
       setNodes((current) =>
         current.map((node) =>
-          node.id === nodeId ? { ...node, data: { ...node.data, ...patch } } : node,
+          node.id === nodeId
+            ? {
+                ...node,
+                data: { ...node.data, ...patch },
+                ...(size ? { width: size.width, height: size.height, style: size } : {}),
+              }
+            : node,
         ),
       );
     },

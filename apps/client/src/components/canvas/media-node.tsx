@@ -7,6 +7,7 @@ import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "re
 import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { NodeName } from "./node-name";
+import { NodeSizeLabel, sizePatchOf } from "./node-size";
 
 const KIND_ICON = { image: FileImage, video: FileVideo, audio: Music } as const;
 
@@ -51,24 +52,29 @@ export function MediaNode({ id, data, selected }: NodeProps) {
   const isPlaceholder = media.status !== "ready" || !media.url;
 
   /**
-   * 媒体加载完成后探测原始尺寸，并按比例缩到默认大小。
+   * 媒体加载完成后按比例缩到默认大小，并（在数可信时）记下原始尺寸。
+   *
+   * 落位和记数字是两件事，判据不同：
+   * - **落位只要比例**，CDN 缩略版和原图比例一致，拿它落位是对的；
+   * - **信息条显示的数字必须是原图的**，所以渲染的是缩略版时（exact=false）
+   *   不写进 data，那份数由上传时量本地文件得到（hooks/use-media-upload.ts）。
    *
    * 自动落位只做一次，判据是"之前从没测到过原始尺寸"，
    * 不能用"节点还没有 width/height" —— 占位框本来就带着 320×180，
    * 那样判会导致上传完成后永远不缩放。
    * 用户手动拉过之后，naturalWidth 已经存在，也就不会再被覆盖。
    */
-  function handleNaturalSize(naturalWidth: number, naturalHeight: number) {
+  function handleNaturalSize(naturalWidth: number, naturalHeight: number, exact: boolean) {
     if (!naturalWidth || !naturalHeight) return;
-    if (media.naturalWidth === naturalWidth && media.naturalHeight === naturalHeight) return;
 
-    const firstMeasure = !media.naturalWidth || !media.naturalHeight;
-    updateNodeData(id, { naturalWidth, naturalHeight });
-
-    if (firstMeasure) {
+    if (!media.naturalWidth || !media.naturalHeight) {
       const fitted = fitMediaSize(naturalWidth, naturalHeight);
       updateNode(id, { width: fitted.width, height: fitted.height, style: fitted });
     }
+
+    if (!exact) return;
+    const patch = sizePatchOf(media, naturalWidth, naturalHeight);
+    if (patch) updateNodeData(id, patch);
   }
 
   return (
@@ -142,11 +148,7 @@ function InfoBar({
         <Icon className="size-3.5 shrink-0" />
         <NodeName nodeId={nodeId} label={media.label} />
       </span>
-      {media.naturalWidth && media.naturalHeight && (
-        <span className="shrink-0 tabular-nums">
-          {media.naturalWidth} × {media.naturalHeight}
-        </span>
-      )}
+      <NodeSizeLabel naturalWidth={media.naturalWidth} naturalHeight={media.naturalHeight} />
     </div>
   );
 }
@@ -156,7 +158,7 @@ function MediaBody({
   onNaturalSize,
 }: {
   media: MediaNodeData;
-  onNaturalSize: (w: number, h: number) => void;
+  onNaturalSize: (w: number, h: number, exact: boolean) => void;
 }) {
   // 素材地址加载失败（服务停了 / 文件被清 / 断网）时给占位符兜底，
   // 否则 <img> 会渲染成破图标 + 一大段 alt 文字。url 变了就重试。
@@ -188,16 +190,20 @@ function MediaBody({
   }
 
   if (media.kind === "image") {
+    const src = resizedImageUrl(media.url, CANVAS_WIDTH);
+    // 渲染的是 CDN 缩略版时 naturalWidth 是缩略宽度，只能用来定比例，不能当原图尺寸
+    const exact = src === media.url;
+
     return (
       // biome-ignore lint/performance/noImgElement: 用户上传的任意图片，无需 next/image
       <img
-        src={resizedImageUrl(media.url, CANVAS_WIDTH)}
+        src={src}
         alt={media.label}
         draggable={false}
         loading="lazy"
         decoding="async"
         onLoad={(event: SyntheticEvent<HTMLImageElement>) =>
-          onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+          onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight, exact)
         }
         onError={() => setLoadFailed(true)}
         // 画布上渲染的是缩略版，双击才在新标签页看全尺寸原图
@@ -215,7 +221,7 @@ function MediaBody({
         controls
         preload="metadata"
         onLoadedMetadata={(event: SyntheticEvent<HTMLVideoElement>) =>
-          onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
+          onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight, true)
         }
         onError={() => setLoadFailed(true)}
         className="nodrag size-full object-fill"

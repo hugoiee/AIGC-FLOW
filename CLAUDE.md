@@ -122,6 +122,14 @@ export type AppType = typeof app;
 - 画布图数据落盘前必须过 `lib/graph.ts` 的 `toPersistedGraph()` 剥掉 React Flow 的
   瞬时状态（`selected` / `dragging` / `measured`），否则点选节点都会触发保存。
   它同时会过滤掉未上传完成的媒体节点及其悬空连线。
+- **`naturalWidth` 量到的不一定是原图**：画布上渲染的常是 bcebos 的 CDN 缩略版
+  （`resizedImageUrl` 会加 `x-bce-process=image/resize,w_1080`），这时 `<img>` 报的
+  是缩略宽度，一张 4K 图会显示成 1080 宽。所以尺寸分两路取：**上传的素材在上传时
+  就从本地 File 量好**（`use-media-upload.ts` 的 `measureLocalMedia`），**生成结果
+  才靠 DOM 量**（生成地址带签名，`resizedImageUrl` 原样返回，渲染的就是原图）。
+  判据统一是「渲染用的 src === 原始 url」，三个节点共用 `node-size.tsx`。
+  注意**落位和显示的数字是两回事**：落位只要比例，缩略版的比例和原图一致，
+  所以浏览器解不动本地文件时节点仍能正确落位，只是不显示尺寸数字。
 - 判断文件类型用 `mediaKindOf(mimeType, filename)`，**不要只看 MIME**：
   部分容器格式（.mp4 / .mkv / .m4a）浏览器会给 `application/octet-stream` 甚至空串。
 - **编组的子节点 position 是相对父节点的**，编组时减去组原点、解组时加回来，
@@ -168,10 +176,6 @@ export type AppType = typeof app;
 - 嵌套编组：目前选区含编组或组内节点时按钮置灰，要支持得处理多层坐标变换、
   递归解组、递归收集组内素材。
 - 音频生成节点；图像生成的多张结果（n>1）与结果历史。
-- 生成结果显示分辨率：媒体节点已有这套（`media-node.tsx` 靠 `onLoad` 读
-  `naturalWidth/naturalHeight` 写进节点 data，信息条显示 `宽 × 高`），生成节点
-  照搬即可 —— 生成地址不过期，`<img>` 读原始尺寸也不需要 CORS（只有往 canvas
-  里读像素才会污染）。
 - 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
   `{result:{content:[url],status:"success"}}`），把设置面板的生成地址指过去即可。

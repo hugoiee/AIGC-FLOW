@@ -122,6 +122,9 @@ export const imageGenNodeDataSchema = z.object({
   status: z.enum(["idle", "generating", "ready", "error"]),
   /** status 为 ready 时必有：生成结果的图片地址 */
   resultUrl: z.string().optional(),
+  /** 结果媒体的原始像素尺寸，加载完成后由前端探测写入，只用于信息条展示 */
+  naturalWidth: z.number().positive().optional(),
+  naturalHeight: z.number().positive().optional(),
   /** status 为 error 时的原因 */
   error: z.string().optional(),
 });

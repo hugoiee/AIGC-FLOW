@@ -2,9 +2,11 @@
 
 import {
   AUDIO_NODE_SIZE,
+  fitMediaSize,
   MEDIA_DEFAULT_MAX_EDGE,
   MEDIA_NODE_TYPE,
   MEDIA_PLACEHOLDER_SIZE,
+  type MediaKind,
   type MediaNodeData,
   mediaKindOf,
 } from "@aigc-flow/shared";
@@ -49,6 +51,44 @@ export function layoutFor(origin: XYPosition, index: number): XYPosition {
   };
 }
 
+type PixelSize = { width: number; height: number };
+
+/**
+ * 在本地解一下文件，量出原始像素尺寸。
+ *
+ * 为什么不等上传完再量画布上那张：画布渲染的是 bcebos 的 CDN 缩略版
+ * （见 lib/media-url.ts），`<img>` 的 naturalWidth 只会给出缩略宽度 ——
+ * 一张 4K 图会被报成 1080 宽。本地这份才是原图。
+ * 音频没有画面，直接返回 null。浏览器解不动的格式（比如非 Safari 的 heic）
+ * 也返回 null，此时节点仍会靠画布上那张的比例落位，只是不显示尺寸数字。
+ */
+function measureLocalMedia(file: File, kind: MediaKind): Promise<PixelSize | null> {
+  if (kind === "audio") return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const settle = (size: PixelSize | null) => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(size && size.width > 0 && size.height > 0 ? size : null);
+    };
+
+    if (kind === "image") {
+      const image = new Image();
+      image.onload = () => settle({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => settle(null);
+      image.src = objectUrl;
+      return;
+    }
+
+    const video = document.createElement("video");
+    // 只要元数据，别为了量个尺寸把整段视频缓冲下来
+    video.preload = "metadata";
+    video.onloadedmetadata = () => settle({ width: video.videoWidth, height: video.videoHeight });
+    video.onerror = () => settle(null);
+    video.src = objectUrl;
+  });
+}
+
 type UploadOutcome = { ok: true; url: string; filename: string } | { ok: false; error: string };
 
 /**
@@ -82,8 +122,11 @@ async function uploadOne(file: File): Promise<UploadOutcome> {
 type UseMediaUploadArgs = {
   /** 先把占位节点放上画布 */
   onNodesCreated: (nodes: Node[]) => void;
-  /** 某个节点上传完成或失败，回填它的 data */
-  onNodeSettled: (nodeId: string, patch: Partial<MediaNodeData>) => void;
+  /**
+   * 某个节点上传完成 / 失败，或量到了原始尺寸时回填。
+   * 带 size 时同时把节点在画布上的显示尺寸落位到该比例。
+   */
+  onNodeSettled: (nodeId: string, patch: Partial<MediaNodeData>, size?: PixelSize) => void;
 };
 
 export function useMediaUpload({ onNodesCreated, onNodeSettled }: UseMediaUploadArgs) {
@@ -97,6 +140,17 @@ export function useMediaUpload({ onNodesCreated, onNodeSettled }: UseMediaUpload
       files.forEach((file, index) => {
         const node = pending[index];
         if (!node) return;
+
+        // 量尺寸和上传并行：本地解码很快，节点能先于上传完成就落到正确比例
+        const kind = mediaKindOf(file.type, file.name) ?? "image";
+        void measureLocalMedia(file, kind).then((size) => {
+          if (!size) return;
+          onNodeSettled(
+            node.id,
+            { naturalWidth: size.width, naturalHeight: size.height },
+            fitMediaSize(size.width, size.height),
+          );
+        });
 
         void uploadOne(file).then((outcome) => {
           if (!outcome.ok) {
