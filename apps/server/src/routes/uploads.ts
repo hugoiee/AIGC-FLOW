@@ -7,6 +7,7 @@ import {
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { getAppSettings } from "../db/settings";
 import { storeFile } from "../uploads/storage";
 
 const downloadQuerySchema = z.object({
@@ -33,6 +34,13 @@ function formatSize(bytes: number): string {
 
 export const uploadsRoute = new Hono()
   .post("/", async (c) => {
+    // 内网上传接口和 /aigc 一样要求 req_from。没配就别读文件了，直接挡在门口，
+    // 否则整批文件白读进内存，还只能拿到内网返回的原始报错。
+    const settings = getAppSettings();
+    if (!settings.reqFrom) {
+      return c.json({ message: "请先在设置面板填写请求来源标识（req_from）" }, 400);
+    }
+
     // Hono 的 parseBody 会把整个文件读进内存，所以 shared 里对单文件大小做了上限
     const body = await c.req.parseBody({ all: true });
     const raw = body.file ?? body.files;
@@ -69,7 +77,7 @@ export const uploadsRoute = new Hono()
         }
 
         try {
-          return await storeFile(file, kind);
+          return await storeFile(file, kind, settings);
         } catch (error) {
           console.error("[upload]", file.name, error);
           return {

@@ -10,6 +10,8 @@ import {
   type MediaNodeData,
   type Project,
   type ProjectGraph,
+  remapPromptTokens,
+  syncPromptTokens,
   TEXT_NODE_HEIGHT,
   TEXT_NODE_TYPE,
   TEXT_NODE_WIDTH,
@@ -72,6 +74,11 @@ import { VideoGenNode } from "./video-gen-node";
 import "@xyflow/react/dist/style.css";
 
 const PASTE_OFFSET = 40;
+
+/** 只有生成节点带 prompt；文本 / 媒体 / 编组没有 */
+function hasPrompt(data: unknown): data is { prompt: string } {
+  return typeof (data as { prompt?: unknown } | null)?.prompt === "string";
+}
 
 /**
  * 组一个新节点。文本节点要带初始尺寸（它可自由拉伸，尺寸随 graph 落盘），
@@ -361,6 +368,7 @@ export function CanvasEditor({
         picker.flow,
       );
       let nextEdges = edgesRef.current;
+      const textIds: string[] = [];
       for (const id of picker.sourceIds) {
         const source = nodesRef.current.find((item) => item.id === id);
         if (source && canConnectNodes(source, node)) {
@@ -368,8 +376,18 @@ export function CanvasEditor({
             { source: id, sourceHandle: null, target: node.id, targetHandle: null },
             nextEdges,
           );
+          if (source.type === TEXT_NODE_TYPE) textIds.push(id);
         }
       }
+
+      // 这个节点是「带着连线一起诞生」的，prompt 里的文本徽章必须在这儿就写好：
+      // usePromptTokens 的挂载守卫会把首次见到的连线一律当成已同步
+      // （那个守卫是为了刷新后不把用户手动删掉的徽章补回来），
+      // 交给它去追就永远追不上。目标是文本节点时连不上任何源，textIds 自然是空的。
+      if (textIds.length > 0) {
+        node.data = { ...node.data, prompt: syncPromptTokens("", textIds, []) };
+      }
+
       const nextNodes = [...nodesRef.current, node];
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -472,6 +490,12 @@ export function CanvasEditor({
       id: idMap.get(node.id) ?? crypto.randomUUID(),
       position: { x: node.position.x + PASTE_OFFSET, y: node.position.y + PASTE_OFFSET },
       selected: true,
+      // prompt 里的文本徽章记的是节点 id，原样粘过去会指向被复制的那个原节点：
+      // 徽章退化成「文本」二字，发请求时那段文本还会被静默丢掉。
+      // 跟着一起粘的换成新 id，没跟着粘的（连线也不会带过来）直接清掉。
+      data: hasPrompt(node.data)
+        ? { ...node.data, prompt: remapPromptTokens(node.data.prompt, idMap) }
+        : node.data,
     }));
     const pastedEdges: Edge[] = copiedEdges.map((edge) => ({
       ...edge,
@@ -500,16 +524,22 @@ export function CanvasEditor({
   );
 
   /**
-   * 上传完成 / 失败时回填。
+   * 上传完成 / 失败、或量到原始尺寸时回填。
    * 用 setNodes 的函数式写法读最新值：上传异步，回调触发时闭包里的 nodes 早过期了。
    * 这里不入历史栈 —— 回填是上传的结果，不是用户的一次操作，
    * 否则按 Cmd+Z 会把节点退回"上传中"这种没意义的状态。
    */
   const handleUploadNodeSettled = useCallback(
-    (nodeId: string, patch: Partial<MediaNodeData>) => {
+    (nodeId: string, patch: Partial<MediaNodeData>, size?: { width: number; height: number }) => {
       setNodes((current) =>
         current.map((node) =>
-          node.id === nodeId ? { ...node, data: { ...node.data, ...patch } } : node,
+          node.id === nodeId
+            ? {
+                ...node,
+                data: { ...node.data, ...patch },
+                ...(size ? { width: size.width, height: size.height, style: size } : {}),
+              }
+            : node,
         ),
       );
     },

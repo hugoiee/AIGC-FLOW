@@ -17,7 +17,7 @@ export const appSettingsSchema = z.object({
   audioUploadUrl: endpointSchema,
   /** AIGC 生成接口（/aigc）的完整地址 */
   generateUrl: endpointSchema,
-  /** 内网生产接口要求的请求来源标识（如 v_zhangsan）。上传接口不需要 */
+  /** 内网生产接口要求的请求来源标识（如 v_zhangsan）。上传和生成都要带 */
   reqFrom: z.string().trim().max(100),
 });
 

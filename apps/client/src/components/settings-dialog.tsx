@@ -47,7 +47,7 @@ const FIELDS: Array<{
     key: "reqFrom",
     label: "请求来源标识（req_from）",
     placeholder: "v_zhangsan",
-    hint: "生成接口要求携带的个人标识，不填无法生成。",
+    hint: "上传和生成接口都要求携带的个人标识，不填两边都用不了。",
   },
 ];
 

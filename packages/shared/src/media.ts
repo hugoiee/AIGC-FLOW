@@ -65,8 +65,9 @@ export function mediaKindOf(mimeType: string, filename = ""): MediaKind | null {
 
 /**
  * 上传接口的返回（本服务包装后的形状）。
- * 内网接口本身只回 { urls: [...] }（docs/接口文档.md），服务端转发层
- * 把它包装成逐文件的结果，一个文件失败不牵连整批。
+ * 内网接口回的是 { files: [{ url, status, ... }], success }（status 有
+ * success / duplicate 等，duplicate 是按内容哈希去重命中了已有文件，
+ * 也算成功），服务端转发层把它归一成这个形状，一个文件失败不牵连整批。
  */
 export const uploadedFileSchema = z.object({
   filename: z.string(),
