@@ -22,6 +22,9 @@ image_list / video_list / audio_list），结果显示在节点上方，右侧 s
 输入框是 contentEditable（`prompt-editor.tsx`），发请求前按 token 位置替换成
 文本内容。连线增删与 token 同步的规则：新连线追加到末尾、断线移除、
 手动删掉徽章不补回（断线重连可重新插入）。
+**「不补回」是靠 `usePromptTokens` 的挂载守卫实现的：首次运行一律视为已同步。**
+所以「节点带着连线一起诞生」的路径（菜单里当场建生成节点）必须由创建方
+把 token 直接写进 prompt，交给这个 hook 去追永远追不上。
 连线约束在 `lib/connection.ts`：图像节点只收图/文本，视频节点收图/视频/音频/文本，
 生成节点的产出算对应种类资源。连线可以直接落在目标节点身上（不必碰左侧端点）。
 多选资源时选区右侧有浮动连线端点（`floating-connector.tsx`）：落到可接受节点上

@@ -10,6 +10,7 @@ import {
   type MediaNodeData,
   type Project,
   type ProjectGraph,
+  syncPromptTokens,
   TEXT_NODE_HEIGHT,
   TEXT_NODE_TYPE,
   TEXT_NODE_WIDTH,
@@ -361,6 +362,7 @@ export function CanvasEditor({
         picker.flow,
       );
       let nextEdges = edgesRef.current;
+      const textIds: string[] = [];
       for (const id of picker.sourceIds) {
         const source = nodesRef.current.find((item) => item.id === id);
         if (source && canConnectNodes(source, node)) {
@@ -368,8 +370,18 @@ export function CanvasEditor({
             { source: id, sourceHandle: null, target: node.id, targetHandle: null },
             nextEdges,
           );
+          if (source.type === TEXT_NODE_TYPE) textIds.push(id);
         }
       }
+
+      // 这个节点是「带着连线一起诞生」的，prompt 里的文本徽章必须在这儿就写好：
+      // usePromptTokens 的挂载守卫会把首次见到的连线一律当成已同步
+      // （那个守卫是为了刷新后不把用户手动删掉的徽章补回来），
+      // 交给它去追就永远追不上。目标是文本节点时连不上任何源，textIds 自然是空的。
+      if (textIds.length > 0) {
+        node.data = { ...node.data, prompt: syncPromptTokens("", textIds, []) };
+      }
+
       const nextNodes = [...nodesRef.current, node];
       setNodes(nextNodes);
       setEdges(nextEdges);
