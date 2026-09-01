@@ -16,7 +16,7 @@ image_list / video_list / audio_list），结果显示在节点上方，右侧 s
 下游引用；`generating` 状态不落盘。版本/模式相关的参数收敛统一在 shared 的
 `clampVideoConfig`。**首尾帧模式的 mode 值是占位的 `first_last_frame`**，
 接口文档没写明，内网联调后改 `packages/shared/src/video-gen.ts` 一处即可。
-生成接口要求 req_from（设置面板里填），不填服务端直接拒绝。
+上传和生成接口都要求 req_from（设置面板里填），不填服务端直接拒绝。
 文本节点（Textarea）连给生成节点后在 prompt 里显示为徽章：prompt 存
 `{{text:<节点id>}}` token（数据契约，见 `packages/shared/src/text-node.ts`），
 输入框是 contentEditable（`prompt-editor.tsx`），发请求前按 token 位置替换成
@@ -145,7 +145,9 @@ export type AppType = typeof app;
   内网 IP 不进前端 bundle、凭据只在服务端填一处）。上传就是这个模式的样板：
   前端只调本服务的 `/api/uploads`，服务端转发到内网上传服务
   （图/视频走 `/api/upload`，音频走 `/api/upload-media`，返回 `{ urls: [...] }`，
-  见 `docs/接口文档.md`）。内网根地址不在 .env 里，存 `settings` 表
+  见 `docs/接口文档.md`）。**转发出去的表单字段是 `files`（复数）加 `req_from`**，
+  写成 `file` 或漏掉 `req_from` 内网都会拒；本服务自己的 `/api/uploads` 两种
+  字段名都收。内网根地址不在 .env 里，存 `settings` 表
   （画布右上角设置面板可改，默认值在 `packages/shared/src/settings.ts`）。
 
 ## 下一步
