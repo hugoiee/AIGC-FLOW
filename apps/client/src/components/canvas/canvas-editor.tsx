@@ -10,6 +10,7 @@ import {
   type MediaNodeData,
   type Project,
   type ProjectGraph,
+  remapPromptTokens,
   syncPromptTokens,
   TEXT_NODE_HEIGHT,
   TEXT_NODE_TYPE,
@@ -73,6 +74,11 @@ import { VideoGenNode } from "./video-gen-node";
 import "@xyflow/react/dist/style.css";
 
 const PASTE_OFFSET = 40;
+
+/** 只有生成节点带 prompt；文本 / 媒体 / 编组没有 */
+function hasPrompt(data: unknown): data is { prompt: string } {
+  return typeof (data as { prompt?: unknown } | null)?.prompt === "string";
+}
 
 /**
  * 组一个新节点。文本节点要带初始尺寸（它可自由拉伸，尺寸随 graph 落盘），
@@ -484,6 +490,12 @@ export function CanvasEditor({
       id: idMap.get(node.id) ?? crypto.randomUUID(),
       position: { x: node.position.x + PASTE_OFFSET, y: node.position.y + PASTE_OFFSET },
       selected: true,
+      // prompt 里的文本徽章记的是节点 id，原样粘过去会指向被复制的那个原节点：
+      // 徽章退化成「文本」二字，发请求时那段文本还会被静默丢掉。
+      // 跟着一起粘的换成新 id，没跟着粘的（连线也不会带过来）直接清掉。
+      data: hasPrompt(node.data)
+        ? { ...node.data, prompt: remapPromptTokens(node.data.prompt, idMap) }
+        : node.data,
     }));
     const pastedEdges: Edge[] = copiedEdges.map((edge) => ({
       ...edge,
