@@ -166,7 +166,9 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           那层，会被圆角裁掉，所以套了两层。
         */}
         <motion.div
-          className="relative"
+          // z-10：右侧功能面板是 1/zoom 反向缩放的，画布缩小后它在屏幕上比结果区高，
+          // 会伸进下方的菜单区域；菜单在 DOM 里排在后面，不抬层级就会盖住面板
+          className="relative z-10"
           animate={isDropTarget ? { scale: [1, 1.02, 1] } : { scale: 1 }}
           transition={
             isDropTarget

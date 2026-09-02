@@ -191,7 +191,9 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
         {/* 端点挂在占位符容器两侧垂直中心，菜单展开收起不影响端点位置（同图像节点） */}
         <motion.div
-          className="relative"
+          // z-10：右侧功能面板是 1/zoom 反向缩放的，画布缩小后它在屏幕上比结果区高，
+          // 会伸进下方的菜单区域；菜单在 DOM 里排在后面，不抬层级就会盖住面板
+          className="relative z-10"
           animate={isDropTarget ? { scale: [1, 1.02, 1] } : { scale: 1 }}
           transition={
             isDropTarget
