@@ -29,13 +29,19 @@ export async function storeFile(
   kind: MediaKind,
   settings: AppSettings,
 ): Promise<UploadedFile> {
+  // 内网地址不进仓库、没有默认值，没配就直接报出来，别拿空地址去 fetch
+  const endpoint = remoteEndpoint(kind, settings);
+  if (!endpoint) {
+    throw new Error(`请先在设置面板填写${kind === "audio" ? "音频" : "图像 / 视频"}上传接口地址`);
+  }
+
   const form = new FormData();
   form.append("files", file, file.name);
   form.append("req_from", settings.reqFrom);
 
   let res: Response;
   try {
-    res = await fetch(remoteEndpoint(kind, settings), { method: "POST", body: form });
+    res = await fetch(endpoint, { method: "POST", body: form });
   } catch (error) {
     console.error("[upload] fetch failed", file.name, error);
     throw new Error("连不上内网上传服务，确认在内网环境且地址配置正确");

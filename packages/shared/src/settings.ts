@@ -1,9 +1,12 @@
 import { z } from "zod";
 
-/** 三个内网接口的默认完整地址（docs/接口文档.md），设置面板可分别改 */
-export const DEFAULT_IMAGE_UPLOAD_URL = "http://10.75.202.161:8511/api/upload";
-export const DEFAULT_AUDIO_UPLOAD_URL = "http://10.75.202.161:8511/api/upload-media";
-export const DEFAULT_GENERATE_URL = "http://10.75.202.161:8204/aigc";
+/**
+ * 三个内网接口的完整地址没有默认值：内网地址不进仓库，
+ * 首次启动后在设置面板里填（存 settings 表），没填之前上传和生成都会被服务端拒绝。
+ */
+export const DEFAULT_IMAGE_UPLOAD_URL = "";
+export const DEFAULT_AUDIO_UPLOAD_URL = "";
+export const DEFAULT_GENERATE_URL = "";
 
 const endpointSchema = z
   .url({ protocol: /^https?$/, error: "请输入 http(s) 开头的完整地址" })

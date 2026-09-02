@@ -229,7 +229,9 @@ export type AppType = typeof app;
   写的 `{ urls: [...] }`**，而且 `status` 有 `duplicate`（按内容哈希去重命中
   了已有文件，照样给地址，算成功）—— 所以解析时认地址不认状态，别去枚举
   状态白名单。内网根地址不在 .env 里，存 `settings` 表
-  （画布右上角设置面板可改，默认值在 `packages/shared/src/settings.ts`）。
+  （画布右上角设置面板可改）。**内网地址没有默认值、不进仓库**：三个接口地址在
+  `packages/shared/src/settings.ts` 里都是空串，首次启动后必须在设置面板里填，
+  没填之前上传和生成都会被服务端以 400 拦下。
 
 ## 下一步
 

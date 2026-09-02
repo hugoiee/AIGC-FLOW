@@ -97,6 +97,9 @@ export const generateRoute = new Hono()
     if (!reqFrom) {
       return c.json({ message: "请先在设置面板填写请求来源标识（req_from）" }, 400);
     }
+    if (!generateUrl) {
+      return c.json({ message: "请先在设置面板填写 AIGC 生成接口地址" }, 400);
+    }
 
     const model = imageModelOf(input.model);
     // 两家模型的 config 形状不同：gpt 是 size/n/quality，nano 是 aspect_ratio/image_size
@@ -125,6 +128,9 @@ export const generateRoute = new Hono()
 
     if (!reqFrom) {
       return c.json({ message: "请先在设置面板填写请求来源标识（req_from）" }, 400);
+    }
+    if (!generateUrl) {
+      return c.json({ message: "请先在设置面板填写 AIGC 生成接口地址" }, 400);
     }
 
     // 版本 / 模式相关的参数约束统一在 shared 的 clampVideoConfig 里收敛

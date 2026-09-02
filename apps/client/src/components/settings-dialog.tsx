@@ -28,19 +28,19 @@ const FIELDS: Array<{
   {
     key: "imageUploadUrl",
     label: "图像 / 视频上传接口",
-    placeholder: "http://10.75.202.161:8511/api/upload",
+    placeholder: "http://<内网主机>:<端口>/api/upload",
     hint: "图片和视频素材经服务端转发上传到这里，填完整接口地址。",
   },
   {
     key: "audioUploadUrl",
     label: "音频上传接口",
-    placeholder: "http://10.75.202.161:8511/api/upload-media",
+    placeholder: "http://<内网主机>:<端口>/api/upload-media",
     hint: "音频素材的上传接口，填完整接口地址。",
   },
   {
     key: "generateUrl",
     label: "AIGC 生成接口",
-    placeholder: "http://10.75.202.161:8204/aigc",
+    placeholder: "http://<内网主机>:<端口>/aigc",
     hint: "图像 / 视频生成（/aigc）走这里，注意端口和上传不同。",
   },
   {
