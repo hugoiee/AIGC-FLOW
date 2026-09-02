@@ -25,6 +25,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -35,12 +36,6 @@ import { PREVIEW_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 
-/** 徽章文案：内容前几个字最有辨识度，空内容退回节点名 */
-function badgeLabelOf(data: TextNodeData): string {
-  const head = data.text.trim().replace(/\s+/g, " ").slice(0, 10);
-  return head || data.label;
-}
-
 type UpstreamNode = { id: string; type?: string; data: Record<string, unknown> } | null;
 
 /**
@@ -49,6 +44,9 @@ type UpstreamNode = { id: string; type?: string; data: Record<string, unknown> }
  * 也列出来（徽章不能因为上游在重新生成就凭空消失），只是发请求时会被跳过。
  */
 export type PromptMediaRef = { id: string; kind: MediaKind; label: string; url?: string };
+
+/** 连入的文本节点在 prompt 里的徽章：显示节点名，悬停看正文 */
+export type PromptTextRef = { id: string; label: string; text: string };
 
 /** 每种素材发请求时的上限（image_list / video_list / audio_list 各自的长度） */
 export type MediaLimits = Record<MediaKind, number>;
@@ -79,7 +77,7 @@ function promptMediaRefOf(node: NonNullable<UpstreamNode>, kind: MediaKind): Pro
  * - 新连上的文本节点把徽章 token 追加到 prompt 末尾，断线的移除
  *   （用户手动删掉徽章但连线还在的不动，位置语义以徽章为准，断线重连可重新插入）
  * - 素材不自动插入（@ 是用户的显式动作），但断线时同样移除对应徽章
- * - badges / refs 给编辑器渲染徽章；lists 是发请求用的三个列表
+ * - texts / refs 给编辑器渲染徽章；lists 是发请求用的三个列表
  *   （已就绪的连入素材按连线顺序、各自截到 limits 的上限），resolvedPrompt 里的
  *   素材徽章换成了带序号的占位符，序号对应各列表的下标 —— 必须一起发
  */
@@ -131,11 +129,12 @@ export function usePromptTokens(
     if (synced !== prompt) updateNodeData(nodeId, { prompt: synced });
   }, [textIdsKey, refIdsKey, prompt, nodeId, updateNodeData]);
 
-  const badges = useMemo(
+  const texts = useMemo(
     () =>
-      new Map(
-        textSources.map((node) => [node.id, badgeLabelOf(node.data as unknown as TextNodeData)]),
-      ),
+      textSources.map((node): PromptTextRef => {
+        const { label, text } = node.data as unknown as TextNodeData;
+        return { id: node.id, label: label || "文本", text };
+      }),
     [textSources],
   );
 
@@ -169,7 +168,7 @@ export function usePromptTokens(
     [lists],
   );
 
-  return { badges, refs, resolvedPrompt, urls };
+  return { texts, refs, resolvedPrompt, urls };
 }
 
 function isMediaKind(value: string | undefined): value is MediaKind {
@@ -207,13 +206,23 @@ function serialize(root: HTMLElement): string {
   return out;
 }
 
-function makeBadge(id: string, badges: Map<string, string>): HTMLSpanElement {
+/** 徽章共用的盒子样式，配色按种类另加 */
+const BADGE_BASE =
+  "mx-0.5 inline-flex max-w-40 select-none items-center gap-0.5 rounded-md px-1.5 py-px align-middle text-xs";
+
+/** 文本徽章：琥珀色，和三种素材区分开。显示节点名，正文悬停时浮出 */
+const TEXT_BADGE_CLASS = "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+
+function makeTextBadge(id: string, texts: Map<string, PromptTextRef>): HTMLSpanElement {
   const span = document.createElement("span");
   span.contentEditable = "false";
   span.dataset.token = id;
-  span.className =
-    "mx-0.5 inline-flex select-none items-center rounded-md bg-secondary px-1.5 py-px align-middle text-secondary-foreground text-xs";
-  span.textContent = badges.get(id) ?? "文本";
+  span.className = cn(BADGE_BASE, TEXT_BADGE_CLASS);
+  const name = document.createElement("span");
+  name.className = "truncate";
+  name.dataset.label = "";
+  name.textContent = texts.get(id)?.label ?? "文本";
+  span.append(name);
   return span;
 }
 
@@ -240,10 +249,7 @@ function makeMediaBadge(
   span.contentEditable = "false";
   span.dataset.ref = id;
   span.dataset.kind = kind;
-  span.className = cn(
-    "mx-0.5 inline-flex max-w-40 select-none items-center gap-0.5 rounded-md px-1.5 py-px align-middle text-xs",
-    KIND_BADGE_CLASS[kind],
-  );
+  span.className = cn(BADGE_BASE, KIND_BADGE_CLASS[kind]);
   const at = document.createElement("span");
   at.className = "opacity-60";
   at.textContent = "@";
@@ -259,7 +265,7 @@ function makeMediaBadge(
 function render(
   root: HTMLElement,
   value: string,
-  badges: Map<string, string>,
+  texts: Map<string, PromptTextRef>,
   refs: Map<string, PromptMediaRef>,
 ) {
   root.textContent = "";
@@ -268,7 +274,8 @@ function render(
   for (const match of value.matchAll(re)) {
     if (match.index > last) root.append(document.createTextNode(value.slice(last, match.index)));
     const [, kind, id] = match as unknown as [string, PromptTokenKind, string | undefined];
-    if (id) root.append(kind === "text" ? makeBadge(id, badges) : makeMediaBadge(kind, id, refs));
+    if (id)
+      root.append(kind === "text" ? makeTextBadge(id, texts) : makeMediaBadge(kind, id, refs));
     last = match.index + match[0].length;
   }
   if (last < value.length) root.append(document.createTextNode(value.slice(last)));
@@ -312,7 +319,7 @@ function findMention(root: HTMLElement): (MentionAnchor & { query: string; rect:
 
 type PromptEditorProps = {
   value: string;
-  badges: Map<string, string>;
+  texts: PromptTextRef[];
   refs: PromptMediaRef[];
   onChange: (value: string) => void;
   placeholder: string;
@@ -325,35 +332,41 @@ type PromptEditorProps = {
  * 日常输入只做序列化回写，光标不受影响。
  * 输入 @ 弹出已连入的参考素材列表，选中后在原地插入素材徽章，悬停徽章看预览。
  */
-export function PromptEditor({ value, badges, refs, onChange, placeholder }: PromptEditorProps) {
+export function PromptEditor({ value, texts, refs, onChange, placeholder }: PromptEditorProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const textById = useMemo(() => new Map(texts.map((item) => [item.id, item])), [texts]);
   const refById = useMemo(() => new Map(refs.map((item) => [item.id, item])), [refs]);
 
   const [mention, setMention] = useState<MentionState | null>(null);
   // @ 所在的文本节点和偏移。DOM 引用不进 state（不参与渲染），选中候选时用来定位替换区间
   const anchorRef = useRef<MentionAnchor | null>(null);
   const composingRef = useRef(false);
-  const [preview, setPreview] = useState<{ id: string; rect: DOMRect } | null>(null);
+  const [preview, setPreview] = useState<{
+    kind: "text" | "media";
+    id: string;
+    rect: DOMRect;
+  } | null>(null);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (serialize(el) !== value) {
-      render(el, value, badges, refById);
+      render(el, value, textById, refById);
       setMention(null);
       return;
     }
-    // 内容没变但徽章文案可能变了（上游节点在编辑 / 改名），原地更新不动光标
-    for (const span of el.querySelectorAll<HTMLElement>("[data-token]")) {
-      const label = badges.get(span.dataset.token ?? "");
-      if (label && span.textContent !== label) span.textContent = label;
-    }
-    for (const span of el.querySelectorAll<HTMLElement>("[data-ref]")) {
-      const label = refById.get(span.dataset.ref ?? "")?.label;
+    // 内容没变但徽章文案可能变了（上游节点改名），原地更新不动光标
+    const syncLabel = (span: HTMLElement, label: string | undefined) => {
       const name = span.querySelector<HTMLElement>("[data-label]");
       if (label && name && name.textContent !== label) name.textContent = label;
+    };
+    for (const span of el.querySelectorAll<HTMLElement>("[data-token]")) {
+      syncLabel(span, textById.get(span.dataset.token ?? "")?.label);
     }
-  }, [value, badges, refById]);
+    for (const span of el.querySelectorAll<HTMLElement>("[data-ref]")) {
+      syncLabel(span, refById.get(span.dataset.ref ?? "")?.label);
+    }
+  }, [value, textById, refById]);
 
   const candidates = useMemo(() => {
     if (!mention) return [];
@@ -451,13 +464,14 @@ export function PromptEditor({ value, badges, refs, onChange, placeholder }: Pro
   };
 
   const badgeOf = (event: PointerEvent) =>
-    (event.target as HTMLElement).closest<HTMLElement>("[data-ref]");
+    (event.target as HTMLElement).closest<HTMLElement>("[data-ref], [data-token]");
 
   const handlePointerOver = (event: PointerEvent) => {
     const badge = badgeOf(event);
-    if (badge?.dataset.ref) {
-      setPreview({ id: badge.dataset.ref, rect: badge.getBoundingClientRect() });
-    }
+    if (!badge) return;
+    const rect = badge.getBoundingClientRect();
+    if (badge.dataset.ref) setPreview({ kind: "media", id: badge.dataset.ref, rect });
+    else if (badge.dataset.token) setPreview({ kind: "text", id: badge.dataset.token, rect });
   };
 
   const handlePointerOut = (event: PointerEvent) => {
@@ -465,7 +479,8 @@ export function PromptEditor({ value, badges, refs, onChange, placeholder }: Pro
     if (badge && !badge.contains(event.relatedTarget as Node | null)) setPreview(null);
   };
 
-  const previewRef = preview ? refById.get(preview.id) : undefined;
+  const previewRef = preview?.kind === "media" ? refById.get(preview.id) : undefined;
+  const previewText = preview?.kind === "text" ? textById.get(preview.id) : undefined;
 
   return (
     <div className="relative">
@@ -524,12 +539,20 @@ export function PromptEditor({ value, badges, refs, onChange, placeholder }: Pro
       {preview &&
         previewRef?.url &&
         createPortal(
-          <MediaPreview
-            kind={previewRef.kind}
-            label={previewRef.label}
-            url={previewRef.url}
-            rect={preview.rect}
-          />,
+          <PreviewCard rect={preview.rect} label={previewRef.label}>
+            <MediaPreview kind={previewRef.kind} label={previewRef.label} url={previewRef.url} />
+          </PreviewCard>,
+          document.body,
+        )}
+
+      {preview &&
+        previewText &&
+        createPortal(
+          <PreviewCard rect={preview.rect} label={previewText.label}>
+            <p className="line-clamp-6 w-56 whitespace-pre-wrap break-words px-1 text-xs">
+              {previewText.text.trim() || <span className="text-muted-foreground">（空）</span>}
+            </p>
+          </PreviewCard>,
           document.body,
         )}
     </div>
@@ -606,17 +629,15 @@ function MentionMenu({
   );
 }
 
-/** 悬停在素材徽章上时浮在徽章上方的预览：图片出缩略图，视频出静音画面，音频只有图标 */
-function MediaPreview({
-  kind,
-  label,
-  url,
+/** 悬停徽章时浮在徽章上方的卡片壳：定位、底色、底部的名称行 */
+function PreviewCard({
   rect,
+  label,
+  children,
 }: {
-  kind: MediaKind;
-  label: string;
-  url: string;
   rect: DOMRect;
+  label: string;
+  children: ReactNode;
 }) {
   return (
     <div
@@ -626,36 +647,45 @@ function MediaPreview({
         top: rect.top - 6,
         transform: "translate(-50%, -100%)",
       }}
-      className="pointer-events-none z-50 rounded-md border bg-popover p-1 shadow-md"
+      className="pointer-events-none z-50 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
     >
-      {kind === "image" && (
-        // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
-        <img
-          src={resizedImageUrl(url, PREVIEW_WIDTH)}
-          alt={label}
-          draggable={false}
-          className="max-h-40 max-w-40 rounded-sm object-contain"
-        />
-      )}
-      {kind === "video" && (
-        <video
-          src={url}
-          muted
-          autoPlay
-          loop
-          playsInline
-          preload="metadata"
-          className="max-h-40 max-w-40 rounded-sm bg-black object-contain"
-        />
-      )}
-      {kind === "audio" && (
-        <div className="flex h-16 w-40 items-center justify-center rounded-sm bg-muted/40">
-          <KindIcon kind="audio" className="size-6" />
-        </div>
-      )}
-      <p className="mt-1 max-w-40 truncate text-center text-[10px] text-muted-foreground">
+      {children}
+      <p className="mt-1 max-w-56 truncate text-center text-[10px] text-muted-foreground">
         {label}
       </p>
+    </div>
+  );
+}
+
+/** 素材预览：图片出缩略图，视频出静音画面，音频只有图标 */
+function MediaPreview({ kind, label, url }: { kind: MediaKind; label: string; url: string }) {
+  if (kind === "image") {
+    return (
+      // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
+      <img
+        src={resizedImageUrl(url, PREVIEW_WIDTH)}
+        alt={label}
+        draggable={false}
+        className="max-h-40 max-w-40 rounded-sm object-contain"
+      />
+    );
+  }
+  if (kind === "video") {
+    return (
+      <video
+        src={url}
+        muted
+        autoPlay
+        loop
+        playsInline
+        preload="metadata"
+        className="max-h-40 max-w-40 rounded-sm bg-black object-contain"
+      />
+    );
+  }
+  return (
+    <div className="flex h-16 w-40 items-center justify-center rounded-sm bg-muted/40">
+      <KindIcon kind="audio" className="size-6" />
     </div>
   );
 }

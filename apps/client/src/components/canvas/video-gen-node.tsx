@@ -85,7 +85,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   // 三个列表的上限对齐接口约定：首尾帧模式只取前两张图（首帧、尾帧）、不支持参考视频。
   // 发请求用的 image_list / video_list / audio_list 直接用 hook 给的 urls：
   // prompt 里 @ 引用的占位符序号对应各列表的下标，必须出自同一份列表
-  const { badges, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
+  const { texts, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
     image: isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES,
     video: isFrames ? 0 : MAX_VIDEO_REFS,
     audio: MAX_AUDIO_REFS,
@@ -216,7 +216,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
               <PromptEditor
                 value={gen.prompt}
-                badges={badges}
+                texts={texts}
                 refs={refs}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"

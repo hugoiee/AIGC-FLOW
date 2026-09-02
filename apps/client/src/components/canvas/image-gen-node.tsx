@@ -74,7 +74,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
   // 图像模型只吃图，视频 / 音频的上限给 0（连线约束本来也不让它们连进来）
-  const { badges, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
+  const { texts, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
     image: MAX_REFERENCE_IMAGES,
     video: 0,
     audio: 0,
@@ -210,7 +210,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
 
               <PromptEditor
                 value={gen.prompt}
-                badges={badges}
+                texts={texts}
                 refs={refs}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
