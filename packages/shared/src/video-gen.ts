@@ -108,6 +108,8 @@ export const DEFAULT_VIDEO_GEN_DATA: VideoGenNodeData = {
 
 /** 生成接口（本服务的 /api/generate/video）的入参 */
 export const generateVideoRequestSchema = z.object({
+  /** 发起生成的项目（画布）id，流水按它归属，统计面板按项目过滤 */
+  projectId: z.number().int().positive(),
   version: videoVersionIdSchema,
   mode: videoModeSchema,
   prompt: z.string().min(1, "提示词不能为空"),

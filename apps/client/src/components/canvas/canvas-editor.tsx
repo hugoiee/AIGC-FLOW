@@ -420,8 +420,8 @@ export function CanvasEditor({
   );
 
   const canvasActions = useMemo(
-    () => ({ renameNode, setNodeMark, activeNodeId, dropTargetId }),
-    [renameNode, setNodeMark, activeNodeId, dropTargetId],
+    () => ({ projectId: project.id, renameNode, setNodeMark, activeNodeId, dropTargetId }),
+    [project.id, renameNode, setNodeMark, activeNodeId, dropTargetId],
   );
 
   /** 排布类操作统一走这里：算出新数组 → setNodes → 整体入历史栈，一次 ⌘Z 全退回 */
@@ -778,7 +778,7 @@ export function CanvasEditor({
             </Panel>
 
             <Panel position="top-right">
-              <CanvasActionGroup />
+              <CanvasActionGroup projectId={project.id} />
             </Panel>
 
             <Panel position="bottom-center">

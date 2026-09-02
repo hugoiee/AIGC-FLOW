@@ -11,6 +11,8 @@ import { createContext, type ReactNode, useContext } from "react";
  * 绕过了撤销栈。所以「节点内发起、但要进历史」的操作统一走这里。
  */
 type CanvasActions = {
+  /** 当前画布所属的项目 id。生成请求带上它，流水按项目归属、统计面板按项目过滤 */
+  projectId: number;
   /** 改节点名称，会进撤销栈 */
   renameNode: (nodeId: string, label: string) => void;
   /** 给节点打标（null 清除），会进撤销栈。只对身上有素材的节点生效 */

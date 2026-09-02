@@ -1,13 +1,32 @@
-import { desc } from "drizzle-orm";
+import { zValidator } from "@hono/zod-validator";
+import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { z } from "zod";
 import { db } from "../db";
 import { generations } from "../db/schema";
 
 /** 列表只回最近这么多条；统计始终是全量聚合，不受列表截断影响 */
 const LIST_LIMIT = 200;
 
-export const generationsRoute = new Hono().get("/", (c) => {
-  const items = db.select().from(generations).orderBy(desc(generations.id)).limit(LIST_LIMIT).all();
+/**
+ * 带 projectId 只看该项目（画布）的流水，成本按项目核算；
+ * 不带就是全局口径，含加项目列之前的老记录和已删项目留下的记录。
+ */
+const listQuerySchema = z.object({
+  projectId: z.coerce.number().int().positive().optional(),
+});
+
+export const generationsRoute = new Hono().get("/", zValidator("query", listQuerySchema), (c) => {
+  const { projectId } = c.req.valid("query");
+  const scope = projectId === undefined ? undefined : eq(generations.projectId, projectId);
+
+  const items = db
+    .select()
+    .from(generations)
+    .where(scope)
+    .orderBy(desc(generations.id))
+    .limit(LIST_LIMIT)
+    .all();
 
   const all = db
     .select({
@@ -16,6 +35,7 @@ export const generationsRoute = new Hono().get("/", (c) => {
       durationSeconds: generations.durationSeconds,
     })
     .from(generations)
+    .where(scope)
     .all();
 
   const stats = {

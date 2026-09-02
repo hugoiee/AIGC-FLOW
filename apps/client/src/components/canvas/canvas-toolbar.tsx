@@ -139,10 +139,10 @@ export function CanvasInfoGroup({
   );
 }
 
-export function CanvasActionGroup() {
+export function CanvasActionGroup({ projectId }: { projectId: number }) {
   return (
     <div className={GROUP}>
-      <StatsDialog />
+      <StatsDialog projectId={projectId} />
       <ThemeToggle />
       <SettingsDialog />
     </div>

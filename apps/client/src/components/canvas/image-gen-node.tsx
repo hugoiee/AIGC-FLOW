@@ -70,7 +70,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
   const zoom = useStore((state) => state.transform[2]);
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
-  const { activeNodeId, dropTargetId, setNodeMark } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: IMAGE_GEN_NODE_TYPE, data }) : null;
@@ -114,6 +114,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
     try {
       const res = await api.api.generate.$post({
         json: {
+          projectId,
           model: gen.model,
           prompt: resolvedPrompt,
           // prompt 里 @ 引用的占位符序号对应这个列表的下标，两者出自同一个 hook

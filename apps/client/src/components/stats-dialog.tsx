@@ -57,8 +57,9 @@ function prettyJson(payload: string): string {
 /**
  * 生成数据统计面板：次数汇总（成本核算用）+ 每次请求的明细
  * （发出去的完整 JSON、状态、结果 / 失败原因）。
+ * 只看当前项目（画布）的流水：开销按项目核算，别的画布的不混进来。
  */
-export function StatsDialog() {
+export function StatsDialog({ projectId }: { projectId: number }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<GenerationsPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,8 +69,11 @@ export function StatsDialog() {
     if (!next) return;
     setError(null);
     api.api.generations
-      .$get()
-      .then((res) => res.json())
+      .$get({ query: { projectId: String(projectId) } })
+      .then((res) => {
+        if (!res.ok) throw new Error(`读取统计失败（${res.status}）`);
+        return res.json();
+      })
       .then((payload) => setData(payload))
       .catch(() => setError("读取统计失败，确认 server 已启动"));
   };
@@ -92,7 +96,7 @@ export function StatsDialog() {
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>数据统计</DialogTitle>
-          <DialogDescription>生成次数与请求明细，成功失败都会记录。</DialogDescription>
+          <DialogDescription>本项目的生成次数与请求明细，成功失败都会记录。</DialogDescription>
         </DialogHeader>
 
         {error && <p className="text-destructive text-sm">{error}</p>}

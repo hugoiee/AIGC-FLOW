@@ -70,8 +70,9 @@ function errorDetailOf(error: unknown): string {
   return String(error);
 }
 
-/** 记一条生成流水（成功失败都记），统计面板和成本核算用 */
+/** 记一条生成流水（成功失败都记），按项目归属，统计面板和成本核算用 */
 function recordGeneration(
+  projectId: number,
   kind: "image" | "video",
   payload: Record<string, unknown>,
   outcome: { url: string } | { message: string },
@@ -79,6 +80,7 @@ function recordGeneration(
 ) {
   db.insert(generations)
     .values({
+      projectId,
       kind,
       payload: JSON.stringify(payload),
       status: "url" in outcome ? "success" : "error",
@@ -118,7 +120,7 @@ export const generateRoute = new Hono()
     };
 
     const outcome = await callAigc(generateUrl, payload);
-    recordGeneration("image", payload, outcome);
+    recordGeneration(input.projectId, "image", payload, outcome);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });
   })
@@ -155,7 +157,7 @@ export const generateRoute = new Hono()
     };
 
     const outcome = await callAigc(generateUrl, payload);
-    recordGeneration("video", payload, outcome, input.duration);
+    recordGeneration(input.projectId, "video", payload, outcome, input.duration);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });
   });

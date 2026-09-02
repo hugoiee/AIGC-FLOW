@@ -59,8 +59,12 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 空格是 React Flow 的 `panActivationKeyCode` 默认值，白捡的）。
 连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。
 每次转发 `/aigc` 都在 `generations` 表记一条流水（完整请求 JSON、状态、
-视频时长），右上角的数据统计面板（`stats-dialog.tsx`）汇总次数与视频总秒数
-（自动时长的不计入、单独计数），供成本核算；`GET /api/generations`。
+视频时长），**按项目归属**（`project_id`，生成请求必带 `projectId`，两个生成节点从
+`useCanvasActions().projectId` 拿）。右上角的数据统计面板（`stats-dialog.tsx`）只汇总
+当前画布的次数与视频总秒数（自动时长的不计入、单独计数），供按项目核算开销；
+`GET /api/generations?projectId=<id>`，不带 projectId 是全局口径（含加列前的老记录）。
+删项目不删流水：删除路由先把该项目流水的 `project_id` 置空再删（连接开着
+`foreign_keys`，迁移里的外键没带 ON DELETE，不先解开会被约束挡住）。
 **节点标记**：素材类节点（媒体 / 图像生成 / 视频生成）可标成「采用 / 废弃」，
 不标就是「还没审」（三态，刻意不做星级和颜色标签）。契约在
 `packages/shared/src/node-mark.ts`（`data.mark`），客户端只有 `lib/node-mark.ts` 一份判断
