@@ -71,11 +71,15 @@ export function StatsDialog({ projectId }: { projectId: number }) {
     api.api.generations
       .$get({ query: { projectId: String(projectId) } })
       .then((res) => {
-        if (!res.ok) throw new Error(`读取统计失败（${res.status}）`);
+        // 服务端有响应但不是 2xx：多半是它自己出错了（比如数据库没跑迁移），
+        // 别和「连不上」混成一句，那会让人去查一个明明在跑的 server
+        if (!res.ok) throw new Error(`读取统计失败：服务端返回 ${res.status}，看 server 日志`);
         return res.json();
       })
       .then((payload) => setData(payload))
-      .catch(() => setError("读取统计失败，确认 server 已启动"));
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : "读取统计失败，确认 server 已启动"),
+      );
   };
 
   const stats = data?.stats;
