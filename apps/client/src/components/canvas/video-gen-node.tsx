@@ -57,7 +57,13 @@ import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { GenMenuDialog } from "./gen-menu-dialog";
-import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
+import {
+  GEN_ACCENT,
+  GEN_HANDLE_BASE,
+  handleScaleStyle,
+  PillOption,
+  RatioOption,
+} from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
 import {
@@ -80,7 +86,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
-  const { activeNodeId, dropTargetId, setNodeMark, projectId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark, duplicateNode, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: VIDEO_GEN_NODE_TYPE, data }) : null;
@@ -191,7 +197,9 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
         {/* 端点挂在占位符容器两侧垂直中心，菜单展开收起不影响端点位置（同图像节点） */}
         <motion.div
-          className="relative"
+          // z-10：右侧功能面板是 1/zoom 反向缩放的，画布缩小后它在屏幕上比结果区高，
+          // 会伸进下方的菜单区域；菜单在 DOM 里排在后面，不抬层级就会盖住面板
+          className="relative z-10"
           animate={isDropTarget ? { scale: [1, 1.02, 1] } : { scale: 1 }}
           transition={
             isDropTarget
@@ -220,7 +228,19 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
           {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
-          <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
+          {/* 两头都是选中才露出；target 在被拉线悬停时也露出来当落点提示，
+              不选中时连线照样能落在节点身上。藏法同图像生成节点（opacity，不能不渲染） */}
+          <Handle
+            type="target"
+            position={Position.Left}
+            style={{
+              ...GEN_HANDLE_BASE,
+              left: -10,
+              ...handleScaleStyle(zoom, Position.Left),
+              opacity: selected || isDropTarget ? 1 : 0,
+              pointerEvents: selected || isDropTarget ? "auto" : "none",
+            }}
+          >
             <Plus className="pointer-events-none size-3" />
           </Handle>
           <Handle
@@ -229,6 +249,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             style={{
               ...GEN_HANDLE_BASE,
               right: -10,
+              ...handleScaleStyle(zoom, Position.Right),
               opacity: selected ? 1 : 0,
               pointerEvents: selected ? "auto" : "none",
             }}
@@ -242,6 +263,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               zoom={zoom}
               mark={mark}
               onMark={(next) => setNodeMark(id, next)}
+              onDuplicate={() => duplicateNode(id)}
             />
           )}
         </motion.div>

@@ -18,6 +18,11 @@ type CanvasActions = {
   /** 给节点打标（null 清除），会进撤销栈。只对身上有素材的节点生效 */
   setNodeMark: (nodeId: string, mark: NodeMark | null) => void;
   /**
+   * 原样复制节点：同 type / data / 尺寸 / 所属编组，位置错开一点；
+   * 从上游过来的连线也照抄一份接到副本上（上游节点本身不复制）。会进撤销栈。
+   */
+  duplicateNode: (nodeId: string) => void;
+  /**
    * 最近一次被单击的节点 id。用来区分「单击选中」和「框选 / 批量选中」：
    * 图像生成节点的配置菜单只在单击时展开，框选中不展开。
    */

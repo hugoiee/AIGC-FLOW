@@ -100,6 +100,31 @@ function buildCanvasNode(
   };
 }
 
+/** 副本相对原节点的偏移：压在原节点上但露出一角，一眼能看出多了一份，拖开即可 */
+const DUPLICATE_OFFSET = 40;
+
+/**
+ * 原样复制一个节点：新 id，同 type / data / 尺寸 / 所属编组（parentId 下 position 是相对
+ * 父节点的，直接加偏移就还在组里），位置错开一点。data 深拷贝，两份别共用引用。
+ * selected / dragging / measured 这些瞬时状态不抄，副本直接置为选中。
+ */
+function duplicateCanvasNode(source: Node): Node {
+  return {
+    id: crypto.randomUUID(),
+    type: source.type,
+    position: {
+      x: source.position.x + DUPLICATE_OFFSET,
+      y: source.position.y + DUPLICATE_OFFSET,
+    },
+    data: structuredClone(source.data),
+    ...(source.width !== undefined ? { width: source.width } : {}),
+    ...(source.height !== undefined ? { height: source.height } : {}),
+    ...(source.style ? { style: { ...source.style } } : {}),
+    ...(source.parentId ? { parentId: source.parentId, extent: source.extent } : {}),
+    selected: true,
+  };
+}
+
 /** 浮动连线的三次贝塞尔（屏幕坐标），弯度随水平距离走，和 React Flow 默认连线手感一致 */
 function floatLinePath({ from, to }: FloatLine): string {
   const bend = Math.max(Math.abs(to.x - from.x) / 2, 40);
@@ -138,7 +163,8 @@ export function CanvasEditor({
   const [mode, setMode] = useState<CanvasMode>("select");
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const { screenToFlowPosition, getViewport, getIntersectingNodes } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition, getViewport, getIntersectingNodes } =
+    useReactFlow();
   // React Flow 的节点 / 控制条 / 小地图有自己一套 CSS 变量，不吃我们的 .dark，
   // 必须显式把主题传给它的 colorMode，否则暗色下节点是白底白字，完全看不见
   const { resolvedTheme } = useTheme();
@@ -277,7 +303,43 @@ export function CanvasEditor({
   // 单击节点才记为 active（框选不触发 onNodeClick），图像生成节点据此决定是否展开菜单
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
-  // 浮动端点拖出的连线（屏幕坐标）与节点选择菜单。弹菜单期间连线保持显示
+  /**
+   * 节点右侧功能面板里的原样复制：节点本身 + 从上游过来的连线各抄一份接到副本上，
+   * 上游节点不动（副本引用的还是同一批素材，prompt 里的 {{text:id}} / {{image:id}}
+   * 徽章指向的节点 id 没变，原样就有效，不用重写）。下游连线不抄：副本还没喂给谁。
+   * 副本成为唯一选中且 active 的节点，面板和菜单随之挪到副本上。
+   */
+  const duplicateNode = useCallback(
+    (nodeId: string) => {
+      const source = nodesRef.current.find((item) => item.id === nodeId);
+      if (!source) return;
+      const copy = duplicateCanvasNode(source);
+      const nextNodes = [
+        ...nodesRef.current.map((item) => (item.selected ? { ...item, selected: false } : item)),
+        copy,
+      ];
+      let nextEdges = edgesRef.current;
+      for (const edge of edgesRef.current) {
+        if (edge.target !== nodeId) continue;
+        nextEdges = addEdge(
+          {
+            source: edge.source,
+            sourceHandle: edge.sourceHandle ?? null,
+            target: copy.id,
+            targetHandle: edge.targetHandle ?? null,
+          },
+          nextEdges,
+        );
+      }
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commitNow(nextNodes, nextEdges);
+      setActiveNodeId(copy.id);
+    },
+    [setNodes, setEdges, commitNow],
+  );
+
+  // 浮动端点 / 单节点端点拖出的连线（屏幕坐标）与节点选择菜单。弹菜单期间连线保持显示
   const [floatLine, setFloatLine] = useState<FloatLine | null>(null);
   const [picker, setPicker] = useState<NodePickerRequest | null>(null);
 
@@ -420,8 +482,15 @@ export function CanvasEditor({
   );
 
   const canvasActions = useMemo(
-    () => ({ projectId: project.id, renameNode, setNodeMark, activeNodeId, dropTargetId }),
-    [project.id, renameNode, setNodeMark, activeNodeId, dropTargetId],
+    () => ({
+      projectId: project.id,
+      renameNode,
+      setNodeMark,
+      duplicateNode,
+      activeNodeId,
+      dropTargetId,
+    }),
+    [project.id, renameNode, setNodeMark, duplicateNode, activeNodeId, dropTargetId],
   );
 
   /** 排布类操作统一走这里：算出新数组 → setNodes → 整体入历史栈，一次 ⌘Z 全退回 */
@@ -682,13 +751,15 @@ export function CanvasEditor({
               connectDragCleanupRef.current?.();
               connectDragCleanupRef.current = null;
               setDropTargetId(null);
-              // 拖普通端点的线松手在节点身上（没落在 target 端点上）也算连上
+              // 落在 target 端点上的 React Flow 自己会连，这里不管
               if (connectionState.isValid) return;
               const fromNode = connectionState.fromNode;
               if (!fromNode || connectionState.fromHandle?.type !== "source") return;
-              const point = "changedTouches" in event ? event.changedTouches[0] : event;
-              if (!point) return;
-              const flow = screenToFlowPosition({ x: point.clientX, y: point.clientY });
+              const touch = "changedTouches" in event ? event.changedTouches[0] : event;
+              if (!touch) return;
+              const point = { x: touch.clientX, y: touch.clientY };
+              const flow = screenToFlowPosition(point);
+              // 松手在节点身上（没落在 target 端点上）也算连上
               const target = getIntersectingNodes({
                 x: flow.x,
                 y: flow.y,
@@ -702,7 +773,14 @@ export function CanvasEditor({
                   target: target.id,
                   targetHandle: null,
                 });
+                return;
               }
+              // 落在空白或不能接受的节点上：和浮动端点一样，原地弹节点选择菜单。
+              // React Flow 自己的连线松手就没了，用浮动连线那条虚线接着画，
+              // 起点取 connectionState.from（端点中心，画布坐标）换成屏幕坐标
+              if (sourceResourceOf(fromNode) === null) return;
+              setFloatLine({ from: flowToScreenPosition(connectionState.from), to: point });
+              setPicker({ screen: point, flow, sourceIds: [fromNode.id] });
             }}
             onPaneContextMenu={(event) => {
               event.preventDefault();

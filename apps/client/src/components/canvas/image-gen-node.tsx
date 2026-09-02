@@ -42,7 +42,13 @@ import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { nodeMarkOf } from "@/lib/node-mark";
 import { cn } from "@/lib/utils";
 import { GenMenuDialog } from "./gen-menu-dialog";
-import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
+import {
+  GEN_ACCENT,
+  GEN_HANDLE_BASE,
+  handleScaleStyle,
+  PillOption,
+  RatioOption,
+} from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
@@ -71,7 +77,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
   const zoom = useStore((state) => state.transform[2]);
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
-  const { activeNodeId, dropTargetId, setNodeMark, projectId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark, duplicateNode, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: IMAGE_GEN_NODE_TYPE, data }) : null;
@@ -166,7 +172,9 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           那层，会被圆角裁掉，所以套了两层。
         */}
         <motion.div
-          className="relative"
+          // z-10：右侧功能面板是 1/zoom 反向缩放的，画布缩小后它在屏幕上比结果区高，
+          // 会伸进下方的菜单区域；菜单在 DOM 里排在后面，不抬层级就会盖住面板
+          className="relative z-10"
           animate={isDropTarget ? { scale: [1, 1.02, 1] } : { scale: 1 }}
           transition={
             isDropTarget
@@ -195,9 +203,21 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
 
           {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
-          {/* 左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
-              端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出 */}
-          <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
+          {/* 左入右出，两头都是选中才露出（和媒体节点同款）。target 另外在被拉线悬停时
+              也露出来当落点提示；不选中时连线照样能落在节点身上，不靠这个端点接线。
+              藏起来用 opacity + pointerEvents 而不是不渲染：不渲染的话它上面已有的连线
+              会被 React Flow 判成悬空直接丢掉 */}
+          <Handle
+            type="target"
+            position={Position.Left}
+            style={{
+              ...GEN_HANDLE_BASE,
+              left: -10,
+              ...handleScaleStyle(zoom, Position.Left),
+              opacity: selected || isDropTarget ? 1 : 0,
+              pointerEvents: selected || isDropTarget ? "auto" : "none",
+            }}
+          >
             <Plus className="pointer-events-none size-3" />
           </Handle>
           <Handle
@@ -206,6 +226,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
             style={{
               ...GEN_HANDLE_BASE,
               right: -10,
+              ...handleScaleStyle(zoom, Position.Right),
               opacity: selected ? 1 : 0,
               pointerEvents: selected ? "auto" : "none",
             }}
@@ -219,6 +240,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
               zoom={zoom}
               mark={mark}
               onMark={(next) => setNodeMark(id, next)}
+              onDuplicate={() => duplicateNode(id)}
             />
           )}
         </motion.div>

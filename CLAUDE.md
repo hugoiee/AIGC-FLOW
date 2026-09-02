@@ -12,7 +12,12 @@
 底部的按钮组同一种胶囊风格但层级刻意更弱（底色更透、阴影更浅、图标次要色）。
 比例档位最低 10%，所以 `minZoom` 是 0.1；右下角的 React Flow 角标用 `proOptions`
 关掉了。
-媒体节点只有右侧一个 source 端点，选中才显示。选中时节点上方的信息条
+媒体节点只有右侧一个 source 端点。**所有端点默认隐藏、选中才显示**（opacity + pointerEvents，
+不能不渲染，否则已有连线会被判悬空丢掉）；生成节点的 target 在被拉线悬停时也露出来当落点
+提示，不选中时连线直接落在节点身上即可。**所有连接端点都按 1/zoom 反向缩放**
+（`gen-node-controls.tsx` 的 `handleScaleStyle`），画布缩小时在屏幕上保持 20px，否则缩到两成
+只剩 4px 拉不出线；行内 transform 会盖掉 React Flow 自己给端点的 translate，所以那段要原样带上，
+以中心为原点缩放，连线落点不动。选中时节点上方的信息条
 （`node-info-bar.tsx`，名称 + 分辨率，媒体 / 生成 / 文本节点共用）、下方的 prompt 菜单、
 右侧的功能面板都用 1/zoom 反向缩放，画布缩小时在屏幕上保持原大小。信息条的宽度
 按内容自适应、不跟节点宽度走（跟节点走的话缩小后名字和尺寸会被截光或挤出去），
@@ -61,6 +66,8 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 多选资源时选区右侧有浮动连线端点（`floating-connector.tsx`）：落到可接受节点上
 批量连线，落到空白或不能接受的节点上会在松手处弹节点选择菜单
 （`node-picker-menu.tsx`，不能连的类型禁用，选择后原地建节点并接线，期间虚线不消失）；
+单个资源节点从右侧端点拉线落空 / 落错时同样弹这个菜单（`onConnectEnd` 里判断，React Flow
+自己的连线松手即消失，用浮动连线那条虚线接着画，起点是 `connectionState.from` 换屏幕坐标）；
 右键画布空白也弹这个菜单（因此选择模式的平移只剩中键和空格+左键，右键让给了菜单；
 空格是 React Flow 的 `panActivationKeyCode` 默认值，白捡的）。
 连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。
@@ -259,6 +266,14 @@ export type AppType = typeof app;
   或代理缓存；③ host 换了但仍是 `.bcebos.com` 子域，`routes/uploads.ts` 的
   `isAllowedSource` 后缀匹配能放行，批量下载不用改；④ 这个地址**带签名凭据**
   （AK + signature），别粘进仓库里的任何文件、issue 或提交信息。
+- **生成转发不能用 Node 全局 `fetch`**（`routes/generate.ts`）。内网 `/aigc` 是同步阻塞式的，
+  受算力影响单次 10-30 分钟才回，而全局 fetch 底层 undici 默认 `headersTimeout` /
+  `bodyTimeout` 都是 300 秒，5 分钟没等到响应头就抛 `fetch failed`（cause 是
+  `HeadersTimeoutError`），以前被一律报成「连不上内网生成服务」—— 症状是配置和网络都正常、
+  慢一点的生成却偶发连不上。现在用 `undici` 包自己的 `fetch` + 显式 `Agent`
+  （两个等待超时设 0 关掉，只留 10 秒建连超时），**dispatcher 和 fetch 必须来自同一份 undici**，
+  别把 npm 的 Agent 塞给全局 fetch。报错按 `error.cause.code` 分：建连类错误码才说「连不上」，
+  其余如实带出错误码。上传转发（`routes/uploads.ts`）仍用全局 fetch，那边几秒就回，不用改。
 - 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
   内网 IP 不进前端 bundle、凭据只在服务端填一处）。上传就是这个模式的样板：
   前端只调本服务的 `/api/uploads`，服务端转发到内网上传服务
@@ -279,8 +294,11 @@ export type AppType = typeof app;
   递归解组、递归收集组内素材。
 - 音频生成节点；图像生成的多张结果（n>1）与结果历史。
 - 单选下载：媒体 / 图像生成 / 视频生成节点单击后右侧浮出功能面板
-  （`node-action-panel.tsx`，下载 + 全屏），单个下载走 `lib/download.ts` 的
-  `downloadItemOf`。后续单节点的功能都往这个面板里加。多选工具条的批量下载阈值
+  （`node-action-panel.tsx`，下载 + 全屏 + 原样复制 + 采用 / 废弃），单个下载走
+  `lib/download.ts` 的 `downloadItemOf`。后续单节点的功能都往这个面板里加。
+  原样复制走 `canvasActions.duplicateNode`：抄节点本身（含结果和标记）和从上游过来的
+  连线，上游节点不动、下游连线不抄，副本偏移 40px 压在原节点上并成为唯一选中 / active 的
+  节点。prompt 里的徽章 token 指向的是上游节点 id，上游没变所以原样有效。多选工具条的批量下载阈值
   （`SELECTION_TOOLBAR_MIN = 2`）不要动 —— 排布、编组那几个按钮对单个节点没意义。
 - 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
