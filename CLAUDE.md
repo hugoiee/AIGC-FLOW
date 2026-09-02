@@ -261,6 +261,14 @@ export type AppType = typeof app;
   或代理缓存；③ host 换了但仍是 `.bcebos.com` 子域，`routes/uploads.ts` 的
   `isAllowedSource` 后缀匹配能放行，批量下载不用改；④ 这个地址**带签名凭据**
   （AK + signature），别粘进仓库里的任何文件、issue 或提交信息。
+- **生成转发不能用 Node 全局 `fetch`**（`routes/generate.ts`）。内网 `/aigc` 是同步阻塞式的，
+  受算力影响单次 10-30 分钟才回，而全局 fetch 底层 undici 默认 `headersTimeout` /
+  `bodyTimeout` 都是 300 秒，5 分钟没等到响应头就抛 `fetch failed`（cause 是
+  `HeadersTimeoutError`），以前被一律报成「连不上内网生成服务」—— 症状是配置和网络都正常、
+  慢一点的生成却偶发连不上。现在用 `undici` 包自己的 `fetch` + 显式 `Agent`
+  （两个等待超时设 0 关掉，只留 10 秒建连超时），**dispatcher 和 fetch 必须来自同一份 undici**，
+  别把 npm 的 Agent 塞给全局 fetch。报错按 `error.cause.code` 分：建连类错误码才说「连不上」，
+  其余如实带出错误码。上传转发（`routes/uploads.ts`）仍用全局 fetch，那边几秒就回，不用改。
 - 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
   内网 IP 不进前端 bundle、凭据只在服务端填一处）。上传就是这个模式的样板：
   前端只调本服务的 `/api/uploads`，服务端转发到内网上传服务

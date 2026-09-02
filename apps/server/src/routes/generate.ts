@@ -8,6 +8,7 @@ import {
 } from "@aigc-flow/shared";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { Agent, fetch as undiciFetch } from "undici";
 import { db } from "../db";
 import { generations } from "../db/schema";
 import { getAppSettings } from "../db/settings";
@@ -23,23 +24,57 @@ type AigcResponse = {
 };
 
 /**
- * 转发到内网 /aigc 并取出结果地址。
- * 内网接口是同步阻塞式的，发出后一直等到生成完成才返回，不设超时。
+ * 转发生成请求专用的连接配置。内网 /aigc 是同步阻塞式的，发出后一直等到生成完成
+ * 才返回，受算力影响单次可能长达 10-30 分钟。Node 自带 fetch 底层是 undici，
+ * 默认 headersTimeout / bodyTimeout 都是 300 秒：5 分钟没等到响应头就抛
+ * `fetch failed`（cause 是 HeadersTimeoutError），之前被一律当成「连不上内网」报出去，
+ * 表现就是「配置和网络都正常，慢一点的生成却偶发连不上」。
+ * 这里两个等待超时都关掉（0 = 不限），只保留建连超时：真连不上还是要快点报。
  */
+const aigcAgent = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 10_000 });
+
+/** 建连阶段的错误码：这些才是真的「连不上」，其余都是连上以后出的事 */
+const CONNECT_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+/** fetch 抛出的 `fetch failed` 本身没信息，真正的原因在 cause 上 */
+function fetchFailureOf(error: unknown): { code: string; detail: string } {
+  const cause = (error as { cause?: unknown })?.cause;
+  const source = (cause ?? error) as { code?: unknown; message?: unknown } | null;
+  const code = typeof source?.code === "string" ? source.code : "";
+  const detail = typeof source?.message === "string" ? source.message : String(source ?? error);
+  return { code, detail: snippet(detail) };
+}
+
+/** 转发到内网 /aigc 并取出结果地址 */
 async function callAigc(
   endpoint: string,
   payload: Record<string, unknown>,
 ): Promise<{ url: string } | { message: string }> {
-  let res: Response;
+  let res: Awaited<ReturnType<typeof undiciFetch>>;
   try {
-    res = await fetch(endpoint, {
+    // 用 undici 自己的 fetch 而不是全局 fetch：dispatcher 要和 fetch 来自同一份 undici
+    res = await undiciFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      dispatcher: aigcAgent,
     });
   } catch (error) {
-    console.error("[generate] fetch failed", error);
-    return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
+    const { code, detail } = fetchFailureOf(error);
+    console.error("[generate] fetch failed", code || "(no code)", detail);
+    if (!code || CONNECT_ERROR_CODES.has(code)) {
+      return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
+    }
+    // 连上了但没等到完整响应（对端断开、中途网络抖动等），把原因如实带出去
+    return { message: `等待内网生成服务返回时中断（${code}${detail ? `：${detail}` : ""}）` };
   }
 
   if (!res.ok) {
