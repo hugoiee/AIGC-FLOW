@@ -159,9 +159,13 @@ export function SelectionToolbar({
                 <ChevronDown />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" side="top">
+            <DropdownMenuContent align="center" side="top" className="min-w-40">
               {ALIGN_ITEMS.map(({ mode, label, icon: Icon }) => (
-                <DropdownMenuItem key={mode} onSelect={() => onAlign(mode)}>
+                <DropdownMenuItem
+                  key={mode}
+                  onSelect={() => onAlign(mode)}
+                  className="whitespace-nowrap"
+                >
                   <Icon />
                   {label}
                 </DropdownMenuItem>
@@ -193,9 +197,13 @@ export function SelectionToolbar({
                   : "等距分布"}
               </TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="center" side="top">
+            <DropdownMenuContent align="center" side="top" className="min-w-40">
               {SPACING_ITEMS.map(({ mode, label, icon: Icon }) => (
-                <DropdownMenuItem key={mode} onSelect={() => onSpace(mode)}>
+                <DropdownMenuItem
+                  key={mode}
+                  onSelect={() => onSpace(mode)}
+                  className="whitespace-nowrap"
+                >
                   <Icon />
                   {label}
                 </DropdownMenuItem>
@@ -223,9 +231,13 @@ export function SelectionToolbar({
             {markCount === 0 ? "选区里没有可标记的素材" : `标记 ${markCount} 个素材`}
           </TooltipContent>
         </Tooltip>
-        <DropdownMenuContent align="center" side="top">
+        <DropdownMenuContent align="center" side="top" className="min-w-40">
           {MARK_ITEMS.map(({ mark, label, icon: Icon }) => (
-            <DropdownMenuItem key={label} onSelect={() => onMark(mark)}>
+            <DropdownMenuItem
+              key={label}
+              onSelect={() => onMark(mark)}
+              className="whitespace-nowrap"
+            >
               <Icon />
               {label}
             </DropdownMenuItem>
