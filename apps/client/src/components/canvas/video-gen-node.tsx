@@ -57,8 +57,8 @@ import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
-import { NodeName } from "./node-name";
-import { NodeSizeLabel, sizePatchOf } from "./node-size";
+import { NodeInfoBar } from "./node-info-bar";
+import { sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** 占位区宽高比跟随所选比例；adaptive（自适应）没有具体值，退回 16:9 */
@@ -151,16 +151,15 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   return (
     <>
       {selected && (
-        <div
-          className="-top-6 pointer-events-none absolute inset-x-0 flex items-center text-xs"
-          style={{ color: GEN_ACCENT }}
-        >
-          <span className="flex min-w-0 items-center gap-1">
-            <Clapperboard className="size-3.5 shrink-0" />
-            <NodeName nodeId={id} label={gen.label} />
-          </span>
-          <NodeSizeLabel naturalWidth={gen.naturalWidth} naturalHeight={gen.naturalHeight} />
-        </div>
+        <NodeInfoBar
+          nodeId={id}
+          label={gen.label}
+          icon={Clapperboard}
+          accent={GEN_ACCENT}
+          zoom={zoom}
+          naturalWidth={gen.naturalWidth}
+          naturalHeight={gen.naturalHeight}
+        />
       )}
 
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
