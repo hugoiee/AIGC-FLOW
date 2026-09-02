@@ -3,7 +3,7 @@ import { messageOf, snippet } from "../lib/upstream";
 
 /**
  * 内网上传服务的返回。图像/视频（/api/upload）和音频（/api/upload-media）
- * 两个端点实测都是这个形状，docs/接口文档.md 里写的 { urls: [...] } 是错的。
+ * 两个端点实测都是这个形状，接口文档里写的 { urls: [...] } 是错的。
  */
 type UploadResponse = {
   files?: Array<{ url?: string; filename?: string; status?: string; error?: string }>;
@@ -12,7 +12,7 @@ type UploadResponse = {
 
 /**
  * 内网接口按媒体种类分了两个端点：音频与图像/视频各一个完整地址，
- * 都在设置面板里配置（存 settings 表），见 docs/接口文档.md。
+ * 都在设置面板里配置（存 settings 表）。
  */
 function remoteEndpoint(kind: MediaKind, settings: AppSettings): string {
   return kind === "audio" ? settings.audioUploadUrl : settings.imageUploadUrl;
@@ -29,13 +29,19 @@ export async function storeFile(
   kind: MediaKind,
   settings: AppSettings,
 ): Promise<UploadedFile> {
+  // 内网地址不进仓库、没有默认值，没配就直接报出来，别拿空地址去 fetch
+  const endpoint = remoteEndpoint(kind, settings);
+  if (!endpoint) {
+    throw new Error(`请先在设置面板填写${kind === "audio" ? "音频" : "图像 / 视频"}上传接口地址`);
+  }
+
   const form = new FormData();
   form.append("files", file, file.name);
   form.append("req_from", settings.reqFrom);
 
   let res: Response;
   try {
-    res = await fetch(remoteEndpoint(kind, settings), { method: "POST", body: form });
+    res = await fetch(endpoint, { method: "POST", body: form });
   } catch (error) {
     console.error("[upload] fetch failed", file.name, error);
     throw new Error("连不上内网上传服务，确认在内网环境且地址配置正确");

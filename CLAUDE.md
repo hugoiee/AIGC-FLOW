@@ -17,7 +17,6 @@
 右侧的功能面板都用 1/zoom 反向缩放，画布缩小时在屏幕上保持原大小。信息条的宽度
 按内容自适应、不跟节点宽度走（跟节点走的话缩小后名字和尺寸会被截光或挤出去），
 尺寸紧跟在名字后面靠左排。**编组暂不支持嵌套。**
-这块的完整决策记录和踩坑见 `docs/画布操作逻辑.md`。
 图像生成节点（GPT Image 2 / Nano Banana 2 / Nano Banana Pro）和视频生成节点
 （Seedance 2.0 / 2.5，参考图模式 + 首尾帧模式）都已接入内网 `/aigc`：
 左侧 target 连参考素材（媒体节点或其他生成节点的结果，按图/视频/音频分流到
@@ -222,14 +221,16 @@ export type AppType = typeof app;
 - 对外部服务的请求一律经 Hono 转发，不让浏览器直连内网地址（避 CORS、
   内网 IP 不进前端 bundle、凭据只在服务端填一处）。上传就是这个模式的样板：
   前端只调本服务的 `/api/uploads`，服务端转发到内网上传服务
-  （图/视频走 `/api/upload`，音频走 `/api/upload-media`，见 `docs/接口文档.md`）。
+  （图/视频走 `/api/upload`，音频走 `/api/upload-media`）。
   **转发出去的表单字段是 `files`（复数）加 `req_from`**，写成 `file` 或漏掉
   `req_from` 内网都会拒；本服务自己的 `/api/uploads` 两种字段名都收。
   **两个端点的返回都是 `{ files: [{ url, status }], success }`，不是文档里
   写的 `{ urls: [...] }`**，而且 `status` 有 `duplicate`（按内容哈希去重命中
   了已有文件，照样给地址，算成功）—— 所以解析时认地址不认状态，别去枚举
   状态白名单。内网根地址不在 .env 里，存 `settings` 表
-  （画布右上角设置面板可改，默认值在 `packages/shared/src/settings.ts`）。
+  （画布右上角设置面板可改）。**内网地址没有默认值、不进仓库**：三个接口地址在
+  `packages/shared/src/settings.ts` 里都是空串，首次启动后必须在设置面板里填，
+  没填之前上传和生成都会被服务端以 400 拦下。
 
 ## 下一步
 

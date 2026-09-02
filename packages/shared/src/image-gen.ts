@@ -4,7 +4,7 @@ import { z } from "zod";
 export const IMAGE_GEN_NODE_TYPE = "image-gen";
 
 /**
- * 可选的图像模型。modelName / version 对应内网生产接口（docs/接口文档.md）
+ * 可选的图像模型。modelName / version 对应内网生产接口
  * 的 model_name / version 字段：nano 系共用一个 model_name，靠 version 区分。
  */
 export const IMAGE_MODELS = [
