@@ -17,8 +17,6 @@ import {
   Eraser,
   Group,
   LayoutGrid,
-  StretchHorizontal,
-  StretchVertical,
   Tag,
   Ungroup,
   X,
@@ -32,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { type AlignMode, DISTRIBUTE_MIN, LAYOUT_GAP, type SpacingMode } from "@/lib/layout";
+import { type AlignMode, DISTRIBUTE_MIN, type SpacingMode } from "@/lib/layout";
 
 /**
  * 选中这么多个节点才出现工具条。
@@ -49,28 +47,12 @@ const ALIGN_ITEMS: Array<{ mode: AlignMode; label: string; icon: typeof AlignSta
   { mode: "bottom", label: "底部对齐", icon: AlignEndHorizontal },
 ];
 
-const SPACING_ITEMS: Array<{
-  mode: SpacingMode;
-  label: string;
-  icon: typeof AlignHorizontalSpaceAround;
-  /** 等距分布要两端固定、中间摊开，少于 3 个没有可分的空隙 */
-  needsThree: boolean;
-}> = [
-  {
-    mode: "distributeX",
-    label: "水平等距分布",
-    icon: AlignHorizontalSpaceAround,
-    needsThree: true,
-  },
-  { mode: "distributeY", label: "垂直等距分布", icon: AlignVerticalSpaceAround, needsThree: true },
-  {
-    mode: "packX",
-    label: `横向收拢至 ${LAYOUT_GAP}px`,
-    icon: StretchHorizontal,
-    needsThree: false,
-  },
-  { mode: "packY", label: `纵向收拢至 ${LAYOUT_GAP}px`, icon: StretchVertical, needsThree: false },
-];
+/** 等距分布两档：两端固定、中间摊开，所以至少要 3 个（DISTRIBUTE_MIN） */
+const SPACING_ITEMS: Array<{ mode: SpacingMode; label: string; icon: typeof AlignStartVertical }> =
+  [
+    { mode: "distributeX", label: "水平等距分布", icon: AlignHorizontalSpaceAround },
+    { mode: "distributeY", label: "垂直等距分布", icon: AlignVerticalSpaceAround },
+  ];
 
 type SelectionToolbarProps = {
   selectedIds: string[];
@@ -188,19 +170,32 @@ export function SelectionToolbar({
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" aria-label="间距调整">
-                <AlignHorizontalSpaceAround />
-                <ChevronDown />
-              </Button>
-            </DropdownMenuTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* 两档都要求至少 3 个，不够时整个按钮置灰；disabled 不派发鼠标事件，套 span 承接 tooltip */}
+                <span className="inline-flex">
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={selectedIds.length < DISTRIBUTE_MIN}
+                      aria-label="等距分布"
+                    >
+                      <AlignHorizontalSpaceAround />
+                      <ChevronDown />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {selectedIds.length < DISTRIBUTE_MIN
+                  ? `等距分布至少要选 ${DISTRIBUTE_MIN} 个节点`
+                  : "等距分布"}
+              </TooltipContent>
+            </Tooltip>
             <DropdownMenuContent align="center" side="top">
-              {SPACING_ITEMS.map(({ mode, label, icon: Icon, needsThree }) => (
-                <DropdownMenuItem
-                  key={mode}
-                  disabled={needsThree && selectedIds.length < DISTRIBUTE_MIN}
-                  onSelect={() => onSpace(mode)}
-                >
+              {SPACING_ITEMS.map(({ mode, label, icon: Icon }) => (
+                <DropdownMenuItem key={mode} onSelect={() => onSpace(mode)}>
                   <Icon />
                   {label}
                 </DropdownMenuItem>
