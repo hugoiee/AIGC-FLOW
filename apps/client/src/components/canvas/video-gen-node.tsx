@@ -100,9 +100,19 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
     audio: MAX_AUDIO_REFS,
   });
   // 缩略格要知道上游有没有被标成废弃（灰显 + 小叉），和 prompt 徽章同一个判据
+  // 缩略格要知道上游有没有被标成废弃（灰显 + 小叉），和 prompt 徽章同一个判据；
+  // 视频 / 音频没有画面可看，格子上显示节点名
   const media = sources.flatMap((node) => {
     const item = node ? nodeMediaOf(node) : null;
-    return item && node ? [{ ...item, rejected: nodeMarkOf(node) === "reject" }] : [];
+    if (!item || !node) return [];
+    const label = node.data.label;
+    return [
+      {
+        ...item,
+        rejected: nodeMarkOf(node) === "reject",
+        label: typeof label === "string" ? label : "",
+      },
+    ];
   });
 
   // 参考素材 chips 按种类分组展示，上限同上
@@ -372,18 +382,34 @@ const CHIP_ICON = { image: ImageIcon, video: FileVideo, audio: Music } as const;
 
 /** 已连素材的实体格：图片缩略图，视频 / 音频显示种类图标 */
 /** 已连入的参考素材：图片出缩略图，视频 / 音频出图标。上游废弃的灰显 + 小叉 */
-type RefMedia = NodeMedia & { rejected: boolean };
+type RefMedia = NodeMedia & { rejected: boolean; label: string };
 
-function RefChip({ kind, url, rejected }: Pick<RefMedia, "kind" | "url" | "rejected">) {
-  return (
-    <div
-      className={cn(
-        "relative flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 text-muted-foreground",
-        rejected && REJECTED_CHIP_CLASS,
-      )}
-    >
-      {kind === "image" ? (
-        // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
+/**
+ * 已连入的视频 / 音频没有缩略图可放，格子按种类上色（和 prompt 徽章同一套：视频紫、
+ * 音频蓝）、实线边框、显示节点名 —— 否则和旁边虚线灰底的「参考视频 / 参考音频」
+ * 占位格长得一样，看不出到底连没连上。
+ */
+const KIND_CHIP_CLASS: Record<Exclude<MediaKind, "image">, string> = {
+  video: "border-violet-500/30 bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  audio: "border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300",
+};
+
+function RefChip({
+  kind,
+  url,
+  rejected,
+  label,
+}: Pick<RefMedia, "kind" | "url" | "rejected" | "label">) {
+  if (kind === "image") {
+    return (
+      <div
+        title={label}
+        className={cn(
+          "relative flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40",
+          rejected && REJECTED_CHIP_CLASS,
+        )}
+      >
+        {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
         <img
           src={resizedImageUrl(url, THUMB_WIDTH)}
           alt="参考素材"
@@ -392,9 +418,24 @@ function RefChip({ kind, url, rejected }: Pick<RefMedia, "kind" | "url" | "rejec
           decoding="async"
           className="size-full object-cover"
         />
-      ) : (
-        <ChipIcon kind={kind} />
+        {rejected && <ChipRejectedMark />}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      title={label}
+      className={cn(
+        "relative flex h-[68px] w-[56px] shrink-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border px-1",
+        KIND_CHIP_CLASS[kind],
+        rejected && REJECTED_CHIP_CLASS,
       )}
+    >
+      <ChipIcon kind={kind} />
+      <span className="max-w-full truncate text-[10px] leading-tight">
+        {label || (kind === "video" ? "视频" : "音频")}
+      </span>
       {rejected && <ChipRejectedMark />}
     </div>
   );
