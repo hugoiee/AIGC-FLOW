@@ -8,6 +8,7 @@ import {
   MAX_REFERENCE_IMAGES,
   MAX_VIDEO_REFS,
   type MediaKind,
+  VIDEO_GEN_NODE_TYPE,
   VIDEO_MODES,
   VIDEO_RATIOS,
   VIDEO_VERSIONS,
@@ -49,11 +50,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { downloadItemOf } from "@/lib/download";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
+import { NodeActionPanel } from "./node-action-panel";
 import { NodeName } from "./node-name";
 import { NodeSizeLabel, sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
@@ -71,6 +74,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const zoom = useStore((state) => state.transform[2]);
   const { activeNodeId, dropTargetId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
+  // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
+  const actionItem = showMenu ? downloadItemOf({ id, type: VIDEO_GEN_NODE_TYPE, data }) : null;
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
 
@@ -201,6 +206,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>
+
+          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
         </motion.div>
 
         {showMenu && (

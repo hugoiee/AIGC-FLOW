@@ -4,6 +4,7 @@ import {
   GPT_QUALITIES,
   GPT_SIZE_PRESETS,
   gptSizeOf,
+  IMAGE_GEN_NODE_TYPE,
   IMAGE_GEN_NODE_WIDTH,
   IMAGE_MODELS,
   type ImageGenNodeData,
@@ -36,10 +37,12 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { downloadItemOf } from "@/lib/download";
 import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
+import { NodeActionPanel } from "./node-action-panel";
 import { NodeName } from "./node-name";
 import { NodeSizeLabel, sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
@@ -62,6 +65,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
   const { activeNodeId, dropTargetId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
+  // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
+  const actionItem = showMenu ? downloadItemOf({ id, type: IMAGE_GEN_NODE_TYPE, data }) : null;
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
 
@@ -190,6 +195,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>
+
+          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
         </motion.div>
 
         {/*
