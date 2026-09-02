@@ -13,7 +13,7 @@ import { Plus, Type } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { GEN_ACCENT, GEN_HANDLE_BASE } from "./gen-node-controls";
+import { GEN_ACCENT, GEN_HANDLE_BASE, handleScaleStyle } from "./gen-node-controls";
 import { NodeInfoBar } from "./node-info-bar";
 
 /** 缩放手柄样式，对齐媒体节点 */
@@ -124,6 +124,7 @@ export function TextNode({ id, data, selected }: NodeProps) {
         style={{
           ...GEN_HANDLE_BASE,
           right: -10,
+          ...handleScaleStyle(zoom, Position.Right),
           opacity: selected ? 1 : 0,
           pointerEvents: selected ? "auto" : "none",
         }}

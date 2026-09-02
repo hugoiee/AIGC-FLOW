@@ -42,7 +42,13 @@ import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { nodeMarkOf } from "@/lib/node-mark";
 import { cn } from "@/lib/utils";
 import { GenMenuDialog } from "./gen-menu-dialog";
-import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
+import {
+  GEN_ACCENT,
+  GEN_HANDLE_BASE,
+  handleScaleStyle,
+  PillOption,
+  RatioOption,
+} from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
@@ -199,7 +205,11 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
 
           {/* 左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
               端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出 */}
-          <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
+          <Handle
+            type="target"
+            position={Position.Left}
+            style={{ ...GEN_HANDLE_BASE, left: -10, ...handleScaleStyle(zoom, Position.Left) }}
+          >
             <Plus className="pointer-events-none size-3" />
           </Handle>
           <Handle
@@ -208,6 +218,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
             style={{
               ...GEN_HANDLE_BASE,
               right: -10,
+              ...handleScaleStyle(zoom, Position.Right),
               opacity: selected ? 1 : 0,
               pointerEvents: selected ? "auto" : "none",
             }}

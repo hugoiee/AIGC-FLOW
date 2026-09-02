@@ -22,6 +22,7 @@ import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
 import { nodeMarkOf } from "@/lib/node-mark";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
+import { handleScaleStyle } from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
 import { NodeMarkBadge, REJECTED_MEDIA_CLASS } from "./node-mark-badge";
@@ -154,6 +155,7 @@ export function MediaNode({ id, data, selected }: NodeProps) {
         position={Position.Right}
         style={{
           ...SOURCE_HANDLE_STYLE,
+          ...handleScaleStyle(zoom, Position.Right),
           opacity: selected ? 1 : 0,
           pointerEvents: selected ? "auto" : "none",
         }}

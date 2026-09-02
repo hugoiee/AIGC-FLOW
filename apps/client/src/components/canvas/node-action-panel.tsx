@@ -7,8 +7,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { type DownloadItem, downloadMedia } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
-/** 面板离节点右边缘的距离：要越过骑在边上的 source 端点（半径 10）再留点空 */
-const PANEL_GAP = 16;
+/**
+ * 面板离节点右边缘的距离（屏幕像素）：要越过骑在边上的 source 端点再留点空。
+ * 端点中心在边外 10px、半径 10，都是按 1/zoom 反向缩放的屏幕尺寸，所以这段间距也按
+ * 屏幕像素算（除以 zoom 换成画布单位），画布缩小时面板才不会压到端点上。
+ */
+const PANEL_GAP = 24;
 
 /**
  * 单击图像 / 视频生成节点后浮在结果区右侧的功能面板：下载、全屏（在新标签页打开原图）、
@@ -36,7 +40,7 @@ export function NodeActionPanel({
     <div
       className="nodrag absolute top-0 flex flex-col gap-1 rounded-xl border bg-card p-1 shadow-sm"
       style={{
-        left: `calc(100% + ${PANEL_GAP}px)`,
+        left: `calc(100% + ${PANEL_GAP / zoom}px)`,
         transform: `scale(${1 / zoom})`,
         transformOrigin: "top left",
       }}

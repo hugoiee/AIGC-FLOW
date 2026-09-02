@@ -1,5 +1,6 @@
 "use client";
 
+import { Position } from "@xyflow/react";
 import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,18 @@ export const GEN_HANDLE_BASE: CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
 };
+
+/**
+ * 端点的反向缩放：画布缩小后端点在屏幕上跟着缩，缩到两成时只剩 4px 根本抓不住，
+ * 所以和信息条、功能面板一样按 1/zoom 放大，在屏幕上保持原大小。
+ * React Flow 自己的 .react-flow__handle-left / -right 靠 translate(∓50%, -50%) 把端点
+ * 骑到边上，行内 transform 会整个盖掉它，这里得把那段 translate 原样带上。
+ * 缩放以端点中心为原点，中心不动，连线的落点和 React Flow 量到的端点位置也就不动。
+ */
+export function handleScaleStyle(zoom: number, position: Position): CSSProperties {
+  const tx = position === Position.Left ? "-50%" : "50%";
+  return { transform: `translate(${tx}, -50%) scale(${1 / zoom})` };
+}
 
 /** 设置弹层里的胶囊选项（质量 / 分辨率 / 时长等） */
 export function PillOption({

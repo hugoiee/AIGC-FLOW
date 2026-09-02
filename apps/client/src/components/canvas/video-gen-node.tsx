@@ -57,7 +57,13 @@ import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { GenMenuDialog } from "./gen-menu-dialog";
-import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
+import {
+  GEN_ACCENT,
+  GEN_HANDLE_BASE,
+  handleScaleStyle,
+  PillOption,
+  RatioOption,
+} from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
 import {
@@ -222,7 +228,11 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
           {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
-          <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
+          <Handle
+            type="target"
+            position={Position.Left}
+            style={{ ...GEN_HANDLE_BASE, left: -10, ...handleScaleStyle(zoom, Position.Left) }}
+          >
             <Plus className="pointer-events-none size-3" />
           </Handle>
           <Handle
@@ -231,6 +241,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             style={{
               ...GEN_HANDLE_BASE,
               right: -10,
+              ...handleScaleStyle(zoom, Position.Right),
               opacity: selected ? 1 : 0,
               pointerEvents: selected ? "auto" : "none",
             }}
