@@ -77,26 +77,26 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
   const isFrames = gen.mode === "first_last_frame";
-  // 首尾帧模式只取前两张图（首帧、尾帧）。image_list 直接用 hook 给的 imageUrls：
-  // prompt 里 @ 引用的占位符序号对应它的下标，两者必须出自同一份列表
-  const { badges, images, resolvedPrompt, imageUrls } = usePromptTokens(
-    id,
-    gen.prompt,
-    sources,
-    isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES,
-  );
-  const refs = sources
+  // 三个列表的上限对齐接口约定：首尾帧模式只取前两张图（首帧、尾帧）、不支持参考视频。
+  // 发请求用的 image_list / video_list / audio_list 直接用 hook 给的 urls：
+  // prompt 里 @ 引用的占位符序号对应各列表的下标，必须出自同一份列表
+  const { badges, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
+    image: isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES,
+    video: isFrames ? 0 : MAX_VIDEO_REFS,
+    audio: MAX_AUDIO_REFS,
+  });
+  const media = sources
     .map((node) => nodeMediaOf(node))
     .filter((item): item is NodeMedia => item !== null);
 
-  // 按种类分流到接口的三个入参；首尾帧模式不支持参考视频
-  const imageRefs = refs
+  // 参考素材 chips 按种类分组展示，上限同上
+  const imageRefs = media
     .filter((item) => item.kind === "image")
     .slice(0, isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES);
   const videoRefs = isFrames
     ? []
-    : refs.filter((item) => item.kind === "video").slice(0, MAX_VIDEO_REFS);
-  const audioRefs = refs.filter((item) => item.kind === "audio").slice(0, MAX_AUDIO_REFS);
+    : media.filter((item) => item.kind === "video").slice(0, MAX_VIDEO_REFS);
+  const audioRefs = media.filter((item) => item.kind === "audio").slice(0, MAX_AUDIO_REFS);
 
   const generating = gen.status === "generating";
 
@@ -117,9 +117,9 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
           version: gen.version,
           mode: gen.mode,
           prompt: resolvedPrompt,
-          imageList: imageUrls,
-          videoList: videoRefs.map((item) => item.url),
-          audioList: audioRefs.map((item) => item.url),
+          imageList: urls.image,
+          videoList: urls.video,
+          audioList: urls.audio,
           resolution: gen.resolution,
           ratio: gen.ratio,
           duration: gen.duration,
@@ -211,7 +211,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               <PromptEditor
                 value={gen.prompt}
                 badges={badges}
-                images={images}
+                refs={refs}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
               />

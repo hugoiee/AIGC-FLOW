@@ -1,11 +1,12 @@
 /**
- * 生成节点 prompt 里的徽章 token 通用部分。两种徽章共用一套语法：
+ * 生成节点 prompt 里的徽章 token 通用部分。几种徽章共用一套语法：
  * - `{{text:<节点id>}}`  连入的文本节点，发请求时换成文本内容（text-node.ts）
- * - `{{image:<节点id>}}` 用 @ 引用的参考图，发请求时换成模型认的占位符（image-ref.ts）
- * 这里放的是不区分种类的操作：复制粘贴时重写 id、按种类批量移除。
+ * - `{{image:<节点id>}}` / `{{video:…}}` / `{{audio:…}}` 用 @ 引用的参考素材，
+ *   发请求时换成模型认的带序号占位符（media-ref.ts）
+ * 这里放的是不区分种类的操作：复制粘贴时重写 id、按节点 id 批量移除。
  */
 
-export const PROMPT_TOKEN_KINDS = ["text", "image"] as const;
+export const PROMPT_TOKEN_KINDS = ["text", "image", "video", "audio"] as const;
 export type PromptTokenKind = (typeof PROMPT_TOKEN_KINDS)[number];
 
 export function promptTokenOf(kind: PromptTokenKind, nodeId: string): string {
@@ -13,11 +14,12 @@ export function promptTokenOf(kind: PromptTokenKind, nodeId: string): string {
 }
 
 /** 匹配任一种 token；捕获组 1 是种类、组 2 是节点 id。编辑器按它切分文本和徽章 */
-export const PROMPT_TOKEN_RE = /\{\{(text|image):([0-9a-zA-Z-]+)\}\}/g;
+export const PROMPT_TOKEN_RE = /\{\{(text|image|video|audio):([0-9a-zA-Z-]+)\}\}/g;
 
 /** 同上，但把 token 前面的空格也吃进来（组 1 空格、组 2 种类、组 3 节点 id）。
     清掉 token 时用它，避免「美人鱼 {{token}} 黄昏」删完剩下两个空格 */
-export const PROMPT_TOKEN_WITH_SPACE_RE = /([ \t]*)\{\{(text|image):([0-9a-zA-Z-]+)\}\}/g;
+export const PROMPT_TOKEN_WITH_SPACE_RE =
+  /([ \t]*)\{\{(text|image|video|audio):([0-9a-zA-Z-]+)\}\}/g;
 
 /**
  * 复制粘贴时重写 prompt 里的 token。
@@ -35,16 +37,10 @@ export function remapPromptTokens(prompt: string, idMap: ReadonlyMap<string, str
     .trim();
 }
 
-/** 把指定种类、指定节点的 token 从 prompt 里移除（断线时用）。前导空格一并去掉 */
-export function removePromptTokens(
-  prompt: string,
-  kind: PromptTokenKind,
-  ids: readonly string[],
-): string {
+/** 把指定节点的 token（不论种类）从 prompt 里移除（断线时用）。前导空格一并去掉 */
+export function removePromptTokens(prompt: string, ids: readonly string[]): string {
   if (ids.length === 0) return prompt;
-  return prompt.replace(
-    PROMPT_TOKEN_WITH_SPACE_RE,
-    (match, _space: string, tokenKind: PromptTokenKind, id: string) =>
-      tokenKind === kind && ids.includes(id) ? "" : match,
+  return prompt.replace(PROMPT_TOKEN_WITH_SPACE_RE, (match, _space: string, _kind, id: string) =>
+    ids.includes(id) ? "" : match,
   );
 }

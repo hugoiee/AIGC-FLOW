@@ -2,20 +2,25 @@
 
 import {
   IMAGE_GEN_NODE_TYPE,
-  imageTokenOf,
+  MEDIA_KINDS,
   MEDIA_NODE_TYPE,
+  type MediaKind,
   type MediaNodeData,
+  type MediaRefSource,
+  mediaTokenOf,
   PROMPT_TOKEN_RE,
+  type PromptTokenKind,
   removePromptTokens,
-  resolveImageRefs,
+  resolveMediaRefs,
   resolvePromptText,
   syncPromptTokens,
   TEXT_NODE_TYPE,
   type TextNodeData,
   textTokenOf,
+  VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import { useReactFlow } from "@xyflow/react";
-import { ImageIcon } from "lucide-react";
+import { FileVideo, ImageIcon, Music } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -39,25 +44,33 @@ function badgeLabelOf(data: TextNodeData): string {
 type UpstreamNode = { id: string; type?: string; data: Record<string, unknown> } | null;
 
 /**
- * prompt 里能用 @ 引用的一张图。id 是上游节点 id，label 是节点名
- * （上传的素材就是文件名），url 只在图片已就绪时有 —— 还在上传 / 生成中的
+ * prompt 里能用 @ 引用的一份素材。id 是上游节点 id，label 是节点名
+ * （上传的素材就是文件名），url 只在素材已就绪时有 —— 还在上传 / 生成中的
  * 也列出来（徽章不能因为上游在重新生成就凭空消失），只是发请求时会被跳过。
  */
-export type PromptImageRef = { id: string; label: string; url?: string };
+export type PromptMediaRef = { id: string; kind: MediaKind; label: string; url?: string };
 
-/** 上游节点是不是「图片类」：图片媒体节点，或图像生成节点（结果可链式引用） */
-function isImageSource(node: NonNullable<UpstreamNode>): boolean {
-  if (node.type === IMAGE_GEN_NODE_TYPE) return true;
-  return node.type === MEDIA_NODE_TYPE && (node.data as unknown as MediaNodeData).kind === "image";
+/** 每种素材发请求时的上限（image_list / video_list / audio_list 各自的长度） */
+export type MediaLimits = Record<MediaKind, number>;
+
+/** 上游节点是哪种素材：媒体节点看 kind，生成节点看产出种类；文本 / 编组不是素材 */
+function mediaKindOfNode(node: NonNullable<UpstreamNode>): MediaKind | null {
+  if (node.type === MEDIA_NODE_TYPE) return (node.data as unknown as MediaNodeData).kind;
+  if (node.type === IMAGE_GEN_NODE_TYPE) return "image";
+  if (node.type === VIDEO_GEN_NODE_TYPE) return "video";
+  return null;
 }
 
-function promptImageRefOf(node: NonNullable<UpstreamNode>): PromptImageRef {
+const KIND_LABEL: Record<MediaKind, string> = { image: "图片", video: "视频", audio: "音频" };
+
+function promptMediaRefOf(node: NonNullable<UpstreamNode>, kind: MediaKind): PromptMediaRef {
   const label = node.data.label;
   const media = nodeMediaOf(node);
   return {
     id: node.id,
-    label: typeof label === "string" && label !== "" ? label : "图片",
-    url: media?.kind === "image" ? media.url : undefined,
+    kind,
+    label: typeof label === "string" && label !== "" ? label : KIND_LABEL[kind],
+    url: media?.kind === kind ? media.url : undefined,
   };
 }
 
@@ -65,16 +78,16 @@ function promptImageRefOf(node: NonNullable<UpstreamNode>): PromptImageRef {
  * 生成节点的 prompt ↔ 上游节点的粘合逻辑：
  * - 新连上的文本节点把徽章 token 追加到 prompt 末尾，断线的移除
  *   （用户手动删掉徽章但连线还在的不动，位置语义以徽章为准，断线重连可重新插入）
- * - 图片不自动插入（@ 是用户的显式动作），但断线时同样移除对应徽章
- * - badges / images 给编辑器渲染徽章；imageUrls 是发请求用的 image_list
- *   （已就绪的连入图按连线顺序、截到 maxImages 张），resolvedPrompt 里的图片徽章
- *   换成了带序号的占位符，序号对应 imageUrls 的下标 —— 两者必须一起发
+ * - 素材不自动插入（@ 是用户的显式动作），但断线时同样移除对应徽章
+ * - badges / refs 给编辑器渲染徽章；lists 是发请求用的三个列表
+ *   （已就绪的连入素材按连线顺序、各自截到 limits 的上限），resolvedPrompt 里的
+ *   素材徽章换成了带序号的占位符，序号对应各列表的下标 —— 必须一起发
  */
 export function usePromptTokens(
   nodeId: string,
   prompt: string,
   sources: UpstreamNode[],
-  maxImages: number,
+  limits: MediaLimits,
 ) {
   const { updateNodeData } = useReactFlow();
 
@@ -85,38 +98,38 @@ export function usePromptTokens(
       ),
     [sources],
   );
-  const images = useMemo(
+  const refs = useMemo(
     () =>
-      sources
-        .filter((node): node is NonNullable<UpstreamNode> => node !== null && isImageSource(node))
-        .map(promptImageRefOf),
+      sources.flatMap((node) => {
+        const kind = node ? mediaKindOfNode(node) : null;
+        return node && kind ? [promptMediaRefOf(node, kind)] : [];
+      }),
     [sources],
   );
   const textIdsKey = textSources.map((node) => node.id).join(",");
-  const imageIdsKey = images.map((image) => image.id).join(",");
+  const refIdsKey = refs.map((ref) => ref.id).join(",");
 
   // 初始视为已同步：挂载时不把用户上次手动删掉的徽章补回来
-  const prevIdsRef = useRef<{ text: string[]; image: string[] } | null>(null);
+  const prevIdsRef = useRef<{ text: string[]; media: string[] } | null>(null);
 
   useEffect(() => {
     const split = (key: string) => (key === "" ? [] : key.split(","));
-    const ids = { text: split(textIdsKey), image: split(imageIdsKey) };
+    const ids = { text: split(textIdsKey), media: split(refIdsKey) };
     const prev = prevIdsRef.current;
     prevIdsRef.current = ids;
     if (prev === null) return;
 
     const addedText = ids.text.filter((id) => !prev.text.includes(id));
     const removedText = prev.text.filter((id) => !ids.text.includes(id));
-    const removedImages = prev.image.filter((id) => !ids.image.includes(id));
-    if (addedText.length === 0 && removedText.length === 0 && removedImages.length === 0) return;
+    const removedMedia = prev.media.filter((id) => !ids.media.includes(id));
+    if (addedText.length === 0 && removedText.length === 0 && removedMedia.length === 0) return;
 
     const synced = removePromptTokens(
       syncPromptTokens(prompt, addedText, removedText),
-      "image",
-      removedImages,
+      removedMedia,
     );
     if (synced !== prompt) updateNodeData(nodeId, { prompt: synced });
-  }, [textIdsKey, imageIdsKey, prompt, nodeId, updateNodeData]);
+  }, [textIdsKey, refIdsKey, prompt, nodeId, updateNodeData]);
 
   const badges = useMemo(
     () =>
@@ -126,24 +139,41 @@ export function usePromptTokens(
     [textSources],
   );
 
-  const ready = useMemo(
-    () =>
-      images
-        .filter((image): image is PromptImageRef & { url: string } => Boolean(image.url))
-        .slice(0, maxImages),
-    [images, maxImages],
-  );
+  const { image: maxImages, video: maxVideos, audio: maxAudios } = limits;
+  const lists = useMemo(() => {
+    const ready = (kind: MediaKind, max: number): MediaRefSource[] =>
+      refs
+        .filter((ref): ref is PromptMediaRef & { url: string } => ref.kind === kind && !!ref.url)
+        .slice(0, max)
+        .map(({ id, url }) => ({ id, url }));
+    return {
+      image: ready("image", maxImages),
+      video: ready("video", maxVideos),
+      audio: ready("audio", maxAudios),
+    };
+  }, [refs, maxImages, maxVideos, maxAudios]);
 
   const resolvedPrompt = useMemo(() => {
     const textById = new Map(
       textSources.map((node) => [node.id, (node.data as unknown as TextNodeData).text]),
     );
-    return resolveImageRefs(resolvePromptText(prompt, textById), ready);
-  }, [prompt, textSources, ready]);
+    return resolveMediaRefs(resolvePromptText(prompt, textById), lists);
+  }, [prompt, textSources, lists]);
 
-  const imageUrls = useMemo(() => ready.map((image) => image.url), [ready]);
+  const urls = useMemo(
+    () => ({
+      image: lists.image.map((item) => item.url),
+      video: lists.video.map((item) => item.url),
+      audio: lists.audio.map((item) => item.url),
+    }),
+    [lists],
+  );
 
-  return { badges, images, resolvedPrompt, imageUrls };
+  return { badges, refs, resolvedPrompt, urls };
+}
+
+function isMediaKind(value: string | undefined): value is MediaKind {
+  return (MEDIA_KINDS as readonly string[]).includes(value ?? "");
 }
 
 /** 把编辑器 DOM 序列化回带 token 的 prompt 字符串 */
@@ -160,8 +190,8 @@ function serialize(root: HTMLElement): string {
         out += textTokenOf(child.dataset.token);
         continue;
       }
-      if (child.dataset.image) {
-        out += imageTokenOf(child.dataset.image);
+      if (child.dataset.ref && isMediaKind(child.dataset.kind)) {
+        out += mediaTokenOf(child.dataset.kind, child.dataset.ref);
         continue;
       }
       if (child.tagName === "BR") {
@@ -187,20 +217,40 @@ function makeBadge(id: string, badges: Map<string, string>): HTMLSpanElement {
   return span;
 }
 
-/** 图片徽章：@ + 节点名，悬停时由编辑器在上方浮出缩略图 */
-function makeImageBadge(id: string, images: Map<string, PromptImageRef>): HTMLSpanElement {
+/** 素材徽章按种类配色：图片绿、音频蓝、视频紫。菜单里的种类图标也用同一组前景色 */
+const KIND_BADGE_CLASS: Record<MediaKind, string> = {
+  image: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  video: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  audio: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+};
+
+const KIND_TEXT_CLASS: Record<MediaKind, string> = {
+  image: "text-emerald-600 dark:text-emerald-300",
+  video: "text-violet-600 dark:text-violet-300",
+  audio: "text-sky-600 dark:text-sky-300",
+};
+
+/** 素材徽章：@ + 节点名，悬停时由编辑器在上方浮出预览 */
+function makeMediaBadge(
+  kind: MediaKind,
+  id: string,
+  refs: Map<string, PromptMediaRef>,
+): HTMLSpanElement {
   const span = document.createElement("span");
   span.contentEditable = "false";
-  span.dataset.image = id;
-  span.className =
-    "mx-0.5 inline-flex max-w-40 select-none items-center gap-0.5 rounded-md bg-primary/10 px-1.5 py-px align-middle text-primary text-xs";
+  span.dataset.ref = id;
+  span.dataset.kind = kind;
+  span.className = cn(
+    "mx-0.5 inline-flex max-w-40 select-none items-center gap-0.5 rounded-md px-1.5 py-px align-middle text-xs",
+    KIND_BADGE_CLASS[kind],
+  );
   const at = document.createElement("span");
   at.className = "opacity-60";
   at.textContent = "@";
   const name = document.createElement("span");
   name.className = "truncate";
   name.dataset.label = "";
-  name.textContent = images.get(id)?.label ?? "图片";
+  name.textContent = refs.get(id)?.label ?? KIND_LABEL[kind];
   span.append(at, name);
   return span;
 }
@@ -210,15 +260,15 @@ function render(
   root: HTMLElement,
   value: string,
   badges: Map<string, string>,
-  images: Map<string, PromptImageRef>,
+  refs: Map<string, PromptMediaRef>,
 ) {
   root.textContent = "";
   const re = new RegExp(PROMPT_TOKEN_RE.source, "g");
   let last = 0;
   for (const match of value.matchAll(re)) {
     if (match.index > last) root.append(document.createTextNode(value.slice(last, match.index)));
-    const [, kind, id] = match;
-    if (id) root.append(kind === "image" ? makeImageBadge(id, images) : makeBadge(id, badges));
+    const [, kind, id] = match as unknown as [string, PromptTokenKind, string | undefined];
+    if (id) root.append(kind === "text" ? makeBadge(id, badges) : makeMediaBadge(kind, id, refs));
     last = match.index + match[0].length;
   }
   if (last < value.length) root.append(document.createTextNode(value.slice(last)));
@@ -263,7 +313,7 @@ function findMention(root: HTMLElement): (MentionAnchor & { query: string; rect:
 type PromptEditorProps = {
   value: string;
   badges: Map<string, string>;
-  images: PromptImageRef[];
+  refs: PromptMediaRef[];
   onChange: (value: string) => void;
   placeholder: string;
 };
@@ -273,11 +323,11 @@ type PromptEditorProps = {
  * 显示为不可编辑的原子徽章（可整体删除），其余部分自由编辑。
  * 非受控 + 按需重建：只有外部 token 增删时才重建 DOM（此时光标丢失可接受），
  * 日常输入只做序列化回写，光标不受影响。
- * 输入 @ 弹出已连入的参考图列表，选中后在原地插入图片徽章，悬停徽章看缩略图。
+ * 输入 @ 弹出已连入的参考素材列表，选中后在原地插入素材徽章，悬停徽章看预览。
  */
-export function PromptEditor({ value, badges, images, onChange, placeholder }: PromptEditorProps) {
+export function PromptEditor({ value, badges, refs, onChange, placeholder }: PromptEditorProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const imageById = useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
+  const refById = useMemo(() => new Map(refs.map((item) => [item.id, item])), [refs]);
 
   const [mention, setMention] = useState<MentionState | null>(null);
   // @ 所在的文本节点和偏移。DOM 引用不进 state（不参与渲染），选中候选时用来定位替换区间
@@ -289,7 +339,7 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
     const el = ref.current;
     if (!el) return;
     if (serialize(el) !== value) {
-      render(el, value, badges, imageById);
+      render(el, value, badges, refById);
       setMention(null);
       return;
     }
@@ -298,18 +348,18 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
       const label = badges.get(span.dataset.token ?? "");
       if (label && span.textContent !== label) span.textContent = label;
     }
-    for (const span of el.querySelectorAll<HTMLElement>("[data-image]")) {
-      const label = imageById.get(span.dataset.image ?? "")?.label;
+    for (const span of el.querySelectorAll<HTMLElement>("[data-ref]")) {
+      const label = refById.get(span.dataset.ref ?? "")?.label;
       const name = span.querySelector<HTMLElement>("[data-label]");
       if (label && name && name.textContent !== label) name.textContent = label;
     }
-  }, [value, badges, imageById]);
+  }, [value, badges, refById]);
 
   const candidates = useMemo(() => {
     if (!mention) return [];
     const query = mention.query.toLowerCase();
-    return images.filter((image) => image.label.toLowerCase().includes(query));
-  }, [mention, images]);
+    return refs.filter((item) => item.label.toLowerCase().includes(query));
+  }, [mention, refs]);
 
   /** 每次输入 / 光标移动后重新判断 @ 菜单该开还是该关 */
   const refreshMention = () => {
@@ -331,8 +381,8 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
     }));
   };
 
-  /** 把「@ + 过滤词」整段换成图片徽章，光标停在徽章后面的空格之后 */
-  const insertImage = (image: PromptImageRef) => {
+  /** 把「@ + 过滤词」整段换成素材徽章，光标停在徽章后面的空格之后 */
+  const insertRef = (item: PromptMediaRef) => {
     const el = ref.current;
     const anchor = anchorRef.current;
     setMention(null);
@@ -352,7 +402,7 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
     // 徽章后面补一个空格：不可编辑元素排在行尾时浏览器放不下光标，有个空格才能接着打字
     const space = document.createTextNode(" ");
     range.insertNode(space);
-    range.insertNode(makeImageBadge(image.id, imageById));
+    range.insertNode(makeMediaBadge(item.kind, item.id, refById));
 
     const after = document.createRange();
     after.setStart(space, 1);
@@ -389,7 +439,7 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
       const picked = candidates[mention.active];
       if ((event.key === "Enter" || event.key === "Tab") && picked) {
         event.preventDefault();
-        insertImage(picked);
+        insertRef(picked);
         return;
       }
     }
@@ -401,12 +451,12 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
   };
 
   const badgeOf = (event: PointerEvent) =>
-    (event.target as HTMLElement).closest<HTMLElement>("[data-image]");
+    (event.target as HTMLElement).closest<HTMLElement>("[data-ref]");
 
   const handlePointerOver = (event: PointerEvent) => {
     const badge = badgeOf(event);
-    if (badge?.dataset.image) {
-      setPreview({ id: badge.dataset.image, rect: badge.getBoundingClientRect() });
+    if (badge?.dataset.ref) {
+      setPreview({ id: badge.dataset.ref, rect: badge.getBoundingClientRect() });
     }
   };
 
@@ -415,7 +465,7 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
     if (badge && !badge.contains(event.relatedTarget as Node | null)) setPreview(null);
   };
 
-  const previewImage = preview ? imageById.get(preview.id) : undefined;
+  const previewRef = preview ? refById.get(preview.id) : undefined;
 
   return (
     <div className="relative">
@@ -464,21 +514,31 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
           <MentionMenu
             state={mention}
             candidates={candidates}
-            hasImages={images.length > 0}
+            hasRefs={refs.length > 0}
             onHover={(active) => setMention({ ...mention, active })}
-            onPick={insertImage}
+            onPick={insertRef}
           />,
           document.body,
         )}
 
       {preview &&
-        previewImage?.url &&
+        previewRef?.url &&
         createPortal(
-          <ImagePreview label={previewImage.label} url={previewImage.url} rect={preview.rect} />,
+          <MediaPreview
+            kind={previewRef.kind}
+            label={previewRef.label}
+            url={previewRef.url}
+            rect={preview.rect}
+          />,
           document.body,
         )}
     </div>
   );
+}
+
+function KindIcon({ kind, className }: { kind: MediaKind; className?: string }) {
+  const Icon = kind === "image" ? ImageIcon : kind === "video" ? FileVideo : Music;
+  return <Icon className={cn(KIND_TEXT_CLASS[kind], className)} strokeWidth={1.5} />;
 }
 
 /**
@@ -489,56 +549,56 @@ export function PromptEditor({ value, badges, images, onChange, placeholder }: P
 function MentionMenu({
   state,
   candidates,
-  hasImages,
+  hasRefs,
   onHover,
   onPick,
 }: {
   state: MentionState;
-  candidates: PromptImageRef[];
-  hasImages: boolean;
+  candidates: PromptMediaRef[];
+  hasRefs: boolean;
   onHover: (index: number) => void;
-  onPick: (image: PromptImageRef) => void;
+  onPick: (item: PromptMediaRef) => void;
 }) {
   return (
     <div
       role="listbox"
-      aria-label="引用参考图"
+      aria-label="引用参考素材"
       style={{ position: "fixed", left: state.left, top: state.bottom + 4 }}
       className="z-50 w-56 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
     >
       {candidates.length === 0 ? (
         <p className="px-2 py-1.5 text-muted-foreground text-xs">
-          {hasImages ? "没有匹配的图片" : "先把图片连到这个节点，才能用 @ 引用"}
+          {hasRefs ? "没有匹配的素材" : "先把素材连到这个节点，才能用 @ 引用"}
         </p>
       ) : (
-        candidates.map((image, index) => (
+        candidates.map((item, index) => (
           <button
-            key={image.id}
+            key={item.id}
             type="button"
             role="option"
             aria-selected={index === state.active}
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={() => onHover(index)}
-            onClick={() => onPick(image)}
+            onClick={() => onPick(item)}
             className={cn(
               "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs",
               index === state.active && "bg-accent text-accent-foreground",
             )}
           >
             <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded border bg-muted/40">
-              {image.url ? (
+              {item.kind === "image" && item.url ? (
                 // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
                 <img
-                  src={resizedImageUrl(image.url, THUMB_WIDTH)}
+                  src={resizedImageUrl(item.url, THUMB_WIDTH)}
                   alt=""
                   draggable={false}
                   className="size-full object-cover"
                 />
               ) : (
-                <ImageIcon className="size-3.5 text-muted-foreground/60" strokeWidth={1.5} />
+                <KindIcon kind={item.kind} className="size-3.5" />
               )}
             </span>
-            <span className="truncate">{image.label}</span>
+            <span className="truncate">{item.label}</span>
           </button>
         ))
       )}
@@ -546,8 +606,18 @@ function MentionMenu({
   );
 }
 
-/** 悬停在图片徽章上时浮在徽章上方的缩略图 */
-function ImagePreview({ label, url, rect }: { label: string; url: string; rect: DOMRect }) {
+/** 悬停在素材徽章上时浮在徽章上方的预览：图片出缩略图，视频出静音画面，音频只有图标 */
+function MediaPreview({
+  kind,
+  label,
+  url,
+  rect,
+}: {
+  kind: MediaKind;
+  label: string;
+  url: string;
+  rect: DOMRect;
+}) {
   return (
     <div
       style={{
@@ -558,13 +628,31 @@ function ImagePreview({ label, url, rect }: { label: string; url: string; rect: 
       }}
       className="pointer-events-none z-50 rounded-md border bg-popover p-1 shadow-md"
     >
-      {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
-      <img
-        src={resizedImageUrl(url, PREVIEW_WIDTH)}
-        alt={label}
-        draggable={false}
-        className="max-h-40 max-w-40 rounded-sm object-contain"
-      />
+      {kind === "image" && (
+        // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
+        <img
+          src={resizedImageUrl(url, PREVIEW_WIDTH)}
+          alt={label}
+          draggable={false}
+          className="max-h-40 max-w-40 rounded-sm object-contain"
+        />
+      )}
+      {kind === "video" && (
+        <video
+          src={url}
+          muted
+          autoPlay
+          loop
+          playsInline
+          preload="metadata"
+          className="max-h-40 max-w-40 rounded-sm bg-black object-contain"
+        />
+      )}
+      {kind === "audio" && (
+        <div className="flex h-16 w-40 items-center justify-center rounded-sm bg-muted/40">
+          <KindIcon kind="audio" className="size-6" />
+        </div>
+      )}
       <p className="mt-1 max-w-40 truncate text-center text-[10px] text-muted-foreground">
         {label}
       </p>

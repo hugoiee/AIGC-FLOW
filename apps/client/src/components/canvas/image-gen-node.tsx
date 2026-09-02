@@ -68,15 +68,16 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
-  const { badges, images, resolvedPrompt, imageUrls } = usePromptTokens(
-    id,
-    gen.prompt,
-    sources,
-    MAX_REFERENCE_IMAGES,
-  );
+  // 图像模型只吃图，视频 / 音频的上限给 0（连线约束本来也不让它们连进来）
+  const { badges, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
+    image: MAX_REFERENCE_IMAGES,
+    video: 0,
+    audio: 0,
+  });
   // id 是源节点 id：同一张图可以连入多次，chips 的 React key 必须用它而不是 url
-  const referenceItems = images.filter(
-    (image): image is { id: string; label: string; url: string } => Boolean(image.url),
+  const referenceItems = refs.filter(
+    (item): item is { id: string; kind: "image"; label: string; url: string } =>
+      item.kind === "image" && Boolean(item.url),
   );
 
   const generating = gen.status === "generating";
@@ -101,7 +102,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           model: gen.model,
           prompt: resolvedPrompt,
           // prompt 里 @ 引用的占位符序号对应这个列表的下标，两者出自同一个 hook
-          imageList: imageUrls,
+          imageList: urls.image,
           quality: gen.quality,
           sizePreset: gen.sizePreset,
           aspectRatio: gen.aspectRatio,
@@ -204,7 +205,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
               <PromptEditor
                 value={gen.prompt}
                 badges={badges}
-                images={images}
+                refs={refs}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
               />
