@@ -59,8 +59,25 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 空格是 React Flow 的 `panActivationKeyCode` 默认值，白捡的）。
 连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。
 每次转发 `/aigc` 都在 `generations` 表记一条流水（完整请求 JSON、状态、
-视频时长），右上角的数据统计面板（`stats-dialog.tsx`）汇总次数与视频总秒数
-（自动时长的不计入、单独计数），供成本核算；`GET /api/generations`。
+视频时长），**按项目归属**（`project_id`，生成请求必带 `projectId`，两个生成节点从
+`useCanvasActions().projectId` 拿）。右上角的数据统计面板（`stats-dialog.tsx`）只汇总
+当前画布的次数与视频总秒数（自动时长的不计入、单独计数），供按项目核算开销；
+`GET /api/generations?projectId=<id>`，不带 projectId 是全局口径（含加列前的老记录）。
+删项目不删流水：删除路由先把该项目流水的 `project_id` 置空再删（连接开着
+`foreign_keys`，迁移里的外键没带 ON DELETE，不先解开会被约束挡住）。
+**节点标记**：素材类节点（媒体 / 图像生成 / 视频生成）可标成「采用 / 废弃」，
+不标就是「还没审」（三态，刻意不做星级和颜色标签）。契约在
+`packages/shared/src/node-mark.ts`（`data.mark`），客户端只有 `lib/node-mark.ts` 一份判断
+（`nodeMarkOf` / `markableIds` / `markNodes`），能打标的判据和批量下载同一个 `nodeMediaOf`。
+画布上废弃的素材整块压暗去色 + 左上角灰叉角标，采用只有一个绿色对勾角标
+（`node-mark-badge.tsx`，1/zoom 反向缩放）。入口两个：单击节点右侧功能面板的两个开关，
+和多选工具条的「标记」下拉（选中编组时作用于组内成员）；没有快捷键。
+标记只是信息、不是锁：废弃的照样能连线当参考、照样会被批量下载，只在 prompt 的
+素材徽章上划线 + title 提示、预览卡标题带「（已废弃）」（`PromptMediaRef.rejected`），
+生成节点菜单里的参考素材缩略格同样灰显 + 小叉（`ChipRejectedMark`）。
+左上角信息组有三个计数芯片「采用 / 废弃 / 待审」（`markSummary`，待审 = 有素材但没打标），
+点击选中该态的全部素材节点（`idsByMark`，只改 selected、不进历史），接着就能批量下载。
+**刻意不做**「隐藏废弃」开关和「删除所有废弃」：要清理就点「废弃」芯片选中后按 Delete。
 音频生成节点尚未开发。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
@@ -201,6 +218,17 @@ export type AppType = typeof app;
   等重渲染完这次 pointerdown 早处理完了）。`offsetY` 不受画布缩放影响，不用除 zoom。
 - 注册了自定义组件的内置类型（比如 `group`）仍然会套 React Flow 的默认样式，
   `.react-flow__node-group` 的白底 / 边框 / padding 要在 `globals.css` 里清掉。
+- **画布上别用 `bg-muted` 做区分底色**：浅色画布底是 `#F5F5F5`（`globals.css` 的
+  `.react-flow.light`），和 `--muted`（oklch 0.97）几乎同值，铺上去看不出来。
+  要和画布拉开的中性填充走 `bg-foreground/<n>`（编组是 `bg-foreground/8 dark:bg-muted`，
+  深色下 muted 比画布亮两档，够用）。
+- **节点标记跟结果走，不跟节点走**：生成节点点「生成」进入 generating 的那个 patch 里
+  就把 `mark` 清掉（旧标记是给上一张打的，且 generating 时旧结果已经不显示）。
+  以后做结果历史（n>1）时 mark 应挪进每条结果记录里，现在放节点 data 上只是过渡。
+  打标要进撤销栈：节点内发起的走 `canvasActions.setNodeMark`（同 `renameNode`），
+  工具条批量的走 `applyLayout(markNodes)`；`markNodes` 一个都没变时返回原数组，
+  调用方据此跳过入栈。prompt 徽章不是 React 渲染的，废弃状态变化和改名走同一条
+  `useEffect` 同步路径（`syncRejected` 直接改 DOM 类名）。
 - **「节点身上有没有素材」只有一份判断**：`lib/node-media.ts` 的 `nodeMediaOf()`，
   媒体节点看 `url`、生成节点看 `resultUrl`，都要求 `status === "ready"`。
   参考素材列表和批量下载共用它。这个判断以前散在三个文件里各写一遍，
@@ -208,6 +236,13 @@ export type AppType = typeof app;
   （比如音频生成）时改这一处就够，别再抄第四份。
 - 浏览器只放行一个页面的第一个自动下载，之后的会弹窗让用户确认。批量下载就是
   逐个触发 + 让用户点一次「允许」，**不要为了绕过它去做服务端打包**。
+- **下载要在各自的隐藏 iframe 里发起，不能用 `<a download>` 点击**（`lib/download.ts`
+  的 `downloadViaFrame`）。API 和页面不同源，`download` 属性会被忽略、点击变成顶层
+  导航，而同一 frame 里新导航会取消还没收到响应头的旧导航。服务端要先等上游
+  bcebos 回头才应答，冷连接 300ms 内回不了，于是一批里只有最后一个成活 ——
+  症状是「第一次批量下载只下一张，再来一次全下来」（第二次连接已复用）。
+  iframe 里的导航一旦转成下载就和 iframe 无关了，但下载型导航不触发 `load`，
+  所以只能靠超时摘 iframe；`load` 触发说明返回的是报错页，直接摘。
 - **上传返回和生成返回是两种地址，别混着处理**。上传的是裸地址
   （`https://bd-spu-img.bj.bcebos.com/aigc_models_upload_img/<内容哈希>.png`），
   生成的带百度云签名 query：

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nodeMarkSchema } from "./node-mark";
 
 /** 图像生成节点在 React Flow 里的 node.type */
 export const IMAGE_GEN_NODE_TYPE = "image-gen";
@@ -125,6 +126,8 @@ export const imageGenNodeDataSchema = z.object({
   /** 结果媒体的原始像素尺寸，加载完成后由前端探测写入，只用于信息条展示 */
   naturalWidth: z.number().positive().optional(),
   naturalHeight: z.number().positive().optional(),
+  /** 节点标记（采用 / 废弃），缺省即未标记。见 node-mark.ts */
+  mark: nodeMarkSchema.optional(),
   /** status 为 error 时的原因 */
   error: z.string().optional(),
 });
@@ -148,6 +151,8 @@ export const IMAGE_GEN_NODE_WIDTH = 534;
 
 /** 生成接口（本服务的 /api/generate）的入参。服务端按 model 挑对应参数组装内网请求 */
 export const generateImageRequestSchema = z.object({
+  /** 发起生成的项目（画布）id，流水按它归属，统计面板按项目过滤 */
+  projectId: z.number().int().positive(),
   model: imageModelIdSchema,
   prompt: z.string().min(1, "提示词不能为空"),
   imageList: z.array(z.url()).max(MAX_REFERENCE_IMAGES).default([]),

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nodeMarkSchema } from "./node-mark";
 
 /** 视频生成节点在 React Flow 里的 node.type */
 export const VIDEO_GEN_NODE_TYPE = "video-gen";
@@ -84,6 +85,8 @@ export const videoGenNodeDataSchema = z.object({
   /** 结果媒体的原始像素尺寸，加载完成后由前端探测写入，只用于信息条展示 */
   naturalWidth: z.number().positive().optional(),
   naturalHeight: z.number().positive().optional(),
+  /** 节点标记（采用 / 废弃），缺省即未标记。见 node-mark.ts */
+  mark: nodeMarkSchema.optional(),
   /** status 为 error 时的原因 */
   error: z.string().optional(),
 });
@@ -105,6 +108,8 @@ export const DEFAULT_VIDEO_GEN_DATA: VideoGenNodeData = {
 
 /** 生成接口（本服务的 /api/generate/video）的入参 */
 export const generateVideoRequestSchema = z.object({
+  /** 发起生成的项目（画布）id，流水按它归属，统计面板按项目过滤 */
+  projectId: z.number().int().positive(),
   version: videoVersionIdSchema,
   mode: videoModeSchema,
   prompt: z.string().min(1, "提示词不能为空"),

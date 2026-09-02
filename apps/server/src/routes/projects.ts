@@ -9,7 +9,7 @@ import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { db } from "../db";
-import { projects } from "../db/schema";
+import { generations, projects } from "../db/schema";
 
 const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
@@ -73,7 +73,12 @@ export const projectsRoute = new Hono()
   )
   .delete("/:id", zValidator("param", idParamSchema), (c) => {
     const { id } = c.req.valid("param");
-    const row = db.delete(projects).where(eq(projects.id, id)).returning({ id: projects.id }).get();
+    // 生成流水不跟着项目删（花出去的钱要留底），先把归属置空再删项目。
+    // 连接开着 foreign_keys，不先解开引用的话删除会被外键约束挡住。
+    const row = db.transaction((tx) => {
+      tx.update(generations).set({ projectId: null }).where(eq(generations.projectId, id)).run();
+      return tx.delete(projects).where(eq(projects.id, id)).returning({ id: projects.id }).get();
+    });
     if (!row) return c.json({ message: "项目不存在" }, 404);
     return c.json({ id: row.id });
   })

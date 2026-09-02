@@ -39,13 +39,20 @@ import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { downloadItemOf } from "@/lib/download";
 import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { nodeMarkOf } from "@/lib/node-mark";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
+import {
+  ChipRejectedMark,
+  NodeMarkBadge,
+  REJECTED_CHIP_CLASS,
+  REJECTED_MEDIA_CLASS,
+} from "./node-mark-badge";
 import { sizePatchOf } from "./node-size";
-import { PromptEditor, usePromptTokens } from "./prompt-editor";
+import { PromptEditor, type PromptMediaRef, usePromptTokens } from "./prompt-editor";
 
 /** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
 function currentAspect(gen: ImageGenNodeData): number {
@@ -63,10 +70,11 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
   const zoom = useStore((state) => state.transform[2]);
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
-  const { activeNodeId, dropTargetId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: IMAGE_GEN_NODE_TYPE, data }) : null;
+  const mark = nodeMarkOf({ type: IMAGE_GEN_NODE_TYPE, data });
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
 
@@ -81,7 +89,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   });
   // id 是源节点 id：同一张图可以连入多次，chips 的 React key 必须用它而不是 url
   const referenceItems = refs.filter(
-    (item): item is { id: string; kind: "image"; label: string; url: string } =>
+    (item): item is PromptMediaRef & { kind: "image"; url: string } =>
       item.kind === "image" && Boolean(item.url),
   );
 
@@ -93,17 +101,20 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
    */
   async function handleGenerate() {
     if (generating) return;
-    // 清掉上一张的尺寸：新图加载出来之前，信息条不该还挂着旧数字
+    // 清掉上一张的尺寸：新图加载出来之前，信息条不该还挂着旧数字。
+    // 标记跟结果走：采用 / 废弃是给上一个结果打的，一起清掉
     updateNodeData(id, {
       status: "generating",
       error: undefined,
       naturalWidth: undefined,
       naturalHeight: undefined,
+      mark: undefined,
     });
 
     try {
       const res = await api.api.generate.$post({
         json: {
+          projectId,
           model: gen.model,
           prompt: resolvedPrompt,
           // prompt 里 @ 引用的占位符序号对应这个列表的下标，两者出自同一个 hook
@@ -167,15 +178,19 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
-            <ResultArea
-              gen={gen}
-              aspect={currentAspect(gen)}
-              onNaturalSize={(width, height) => {
-                const patch = sizePatchOf(gen, width, height);
-                if (patch) updateNodeData(id, patch);
-              }}
-            />
+            <div className={cn(mark === "reject" && REJECTED_MEDIA_CLASS)}>
+              <ResultArea
+                gen={gen}
+                aspect={currentAspect(gen)}
+                onNaturalSize={(width, height) => {
+                  const patch = sizePatchOf(gen, width, height);
+                  if (patch) updateNodeData(id, patch);
+                }}
+              />
+            </div>
           </div>
+
+          {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
           {/* 左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
               端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出 */}
@@ -195,7 +210,14 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
             <Plus className="pointer-events-none size-3" />
           </Handle>
 
-          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
+          {actionItem && (
+            <NodeActionPanel
+              item={actionItem}
+              zoom={zoom}
+              mark={mark}
+              onMark={(next) => setNodeMark(id, next)}
+            />
+          )}
         </motion.div>
 
         {/*
@@ -326,14 +348,21 @@ function ResultArea({
   );
 }
 
-/** 参考图横排：已连接的缩略图（上限 16），未满时只补一个占位示例格 */
-function ReferenceChips({ items }: { items: Array<{ id: string; url: string }> }) {
+/** 参考图横排：已连接的缩略图（上限 16），未满时只补一个占位示例格。废弃的上游灰显 + 小叉 */
+function ReferenceChips({
+  items,
+}: {
+  items: Array<{ id: string; url: string; rejected: boolean }>;
+}) {
   const shown = items.slice(0, MAX_REFERENCE_IMAGES);
 
   return (
     <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
-      {shown.map(({ id, url }) => (
-        <div key={id} className="h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border">
+      {shown.map(({ id, url, rejected }) => (
+        <div
+          key={id}
+          className="relative h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border"
+        >
           {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
           <img
             src={resizedImageUrl(url, THUMB_WIDTH)}
@@ -341,8 +370,9 @@ function ReferenceChips({ items }: { items: Array<{ id: string; url: string }> }
             draggable={false}
             loading="lazy"
             decoding="async"
-            className="size-full object-cover"
+            className={cn("size-full object-cover", rejected && REJECTED_CHIP_CLASS)}
           />
+          {rejected && <ChipRejectedMark />}
         </div>
       ))}
       {shown.length < MAX_REFERENCE_IMAGES && (

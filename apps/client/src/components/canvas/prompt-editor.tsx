@@ -33,6 +33,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { PREVIEW_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { nodeMarkOf } from "@/lib/node-mark";
 import { nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +43,15 @@ type UpstreamNode = { id: string; type?: string; data: Record<string, unknown> }
  * prompt 里能用 @ 引用的一份素材。id 是上游节点 id，label 是节点名
  * （上传的素材就是文件名），url 只在素材已就绪时有 —— 还在上传 / 生成中的
  * 也列出来（徽章不能因为上游在重新生成就凭空消失），只是发请求时会被跳过。
+ * rejected 是上游被标成了「废弃」：不拦着引用，只在徽章和候选里划线提示。
  */
-export type PromptMediaRef = { id: string; kind: MediaKind; label: string; url?: string };
+export type PromptMediaRef = {
+  id: string;
+  kind: MediaKind;
+  label: string;
+  url?: string;
+  rejected: boolean;
+};
 
 /** 连入的文本节点在 prompt 里的徽章：显示节点名，悬停看正文 */
 export type PromptTextRef = { id: string; label: string; text: string };
@@ -69,6 +77,7 @@ function promptMediaRefOf(node: NonNullable<UpstreamNode>, kind: MediaKind): Pro
     kind,
     label: typeof label === "string" && label !== "" ? label : KIND_LABEL[kind],
     url: media?.kind === kind ? media.url : undefined,
+    rejected: nodeMarkOf(node) === "reject",
   };
 }
 
@@ -239,6 +248,20 @@ const KIND_TEXT_CLASS: Record<MediaKind, string> = {
   audio: "text-sky-600 dark:text-sky-300",
 };
 
+/** 废弃提示的文案，挂在徽章的 title 上，悬停能看到原因 */
+const REJECTED_TITLE = "这份素材已标记为废弃";
+
+/**
+ * 上游被标成废弃时徽章划线变淡。直接改 DOM 类名：徽章不是 React 渲染的，
+ * 标记变了走和改名同一条同步路径（见编辑器里的 useEffect）。
+ */
+function syncRejected(span: HTMLElement, rejected: boolean) {
+  span.classList.toggle("line-through", rejected);
+  span.classList.toggle("opacity-60", rejected);
+  if (rejected) span.title = REJECTED_TITLE;
+  else span.removeAttribute("title");
+}
+
 /** 素材徽章：@ + 节点名，悬停时由编辑器在上方浮出预览 */
 function makeMediaBadge(
   kind: MediaKind,
@@ -258,6 +281,7 @@ function makeMediaBadge(
   name.dataset.label = "";
   name.textContent = refs.get(id)?.label ?? KIND_LABEL[kind];
   span.append(at, name);
+  syncRejected(span, refs.get(id)?.rejected ?? false);
   return span;
 }
 
@@ -355,7 +379,7 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
       setMention(null);
       return;
     }
-    // 内容没变但徽章文案可能变了（上游节点改名），原地更新不动光标
+    // 内容没变但徽章文案 / 废弃状态可能变了（上游节点改名、打标），原地更新不动光标
     const syncLabel = (span: HTMLElement, label: string | undefined) => {
       const name = span.querySelector<HTMLElement>("[data-label]");
       if (label && name && name.textContent !== label) name.textContent = label;
@@ -364,7 +388,9 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
       syncLabel(span, textById.get(span.dataset.token ?? "")?.label);
     }
     for (const span of el.querySelectorAll<HTMLElement>("[data-ref]")) {
-      syncLabel(span, refById.get(span.dataset.ref ?? "")?.label);
+      const item = refById.get(span.dataset.ref ?? "");
+      syncLabel(span, item?.label);
+      syncRejected(span, item?.rejected ?? false);
     }
   }, [value, textById, refById]);
 
@@ -539,7 +565,10 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
       {preview &&
         previewRef?.url &&
         createPortal(
-          <PreviewCard rect={preview.rect} label={previewRef.label}>
+          <PreviewCard
+            rect={preview.rect}
+            label={previewRef.rejected ? `${previewRef.label}（已废弃）` : previewRef.label}
+          >
             <MediaPreview kind={previewRef.kind} label={previewRef.label} url={previewRef.url} />
           </PreviewCard>,
           document.body,
@@ -621,7 +650,9 @@ function MentionMenu({
                 <KindIcon kind={item.kind} className="size-3.5" />
               )}
             </span>
-            <span className="truncate">{item.label}</span>
+            <span className={cn("truncate", item.rejected && "line-through opacity-60")}>
+              {item.label}
+            </span>
           </button>
         ))
       )}

@@ -2,6 +2,7 @@ export * from "./graph";
 export * from "./image-gen";
 export * from "./media";
 export * from "./media-ref";
+export * from "./node-mark";
 export * from "./project";
 export * from "./prompt-token";
 export * from "./settings";

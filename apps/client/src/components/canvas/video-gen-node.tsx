@@ -52,12 +52,19 @@ import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { downloadItemOf } from "@/lib/download";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { nodeMarkOf } from "@/lib/node-mark";
 import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
+import {
+  ChipRejectedMark,
+  NodeMarkBadge,
+  REJECTED_CHIP_CLASS,
+  REJECTED_MEDIA_CLASS,
+} from "./node-mark-badge";
 import { sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
@@ -72,10 +79,11 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
-  const { activeNodeId, dropTargetId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: VIDEO_GEN_NODE_TYPE, data }) : null;
+  const mark = nodeMarkOf({ type: VIDEO_GEN_NODE_TYPE, data });
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
 
@@ -90,9 +98,11 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
     video: isFrames ? 0 : MAX_VIDEO_REFS,
     audio: MAX_AUDIO_REFS,
   });
-  const media = sources
-    .map((node) => nodeMediaOf(node))
-    .filter((item): item is NodeMedia => item !== null);
+  // 缩略格要知道上游有没有被标成废弃（灰显 + 小叉），和 prompt 徽章同一个判据
+  const media = sources.flatMap((node) => {
+    const item = node ? nodeMediaOf(node) : null;
+    return item && node ? [{ ...item, rejected: nodeMarkOf(node) === "reject" }] : [];
+  });
 
   // 参考素材 chips 按种类分组展示，上限同上
   const imageRefs = media
@@ -108,17 +118,20 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   /** 点生成：同图像节点的状态机。内网接口同步阻塞，视频可能要等几分钟 */
   async function handleGenerate() {
     if (generating) return;
-    // 清掉上一条的尺寸：新视频加载出来之前，信息条不该还挂着旧数字
+    // 清掉上一条的尺寸：新视频加载出来之前，信息条不该还挂着旧数字。
+    // 标记跟结果走：采用 / 废弃是给上一个结果打的，一起清掉
     updateNodeData(id, {
       status: "generating",
       error: undefined,
       naturalWidth: undefined,
       naturalHeight: undefined,
+      mark: undefined,
     });
 
     try {
       const res = await api.api.generate.video.$post({
         json: {
+          projectId,
           version: gen.version,
           mode: gen.mode,
           prompt: resolvedPrompt,
@@ -180,15 +193,19 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
-            <ResultArea
-              gen={gen}
-              aspect={currentAspect(gen)}
-              onNaturalSize={(width, height) => {
-                const patch = sizePatchOf(gen, width, height);
-                if (patch) updateNodeData(id, patch);
-              }}
-            />
+            <div className={cn(mark === "reject" && REJECTED_MEDIA_CLASS)}>
+              <ResultArea
+                gen={gen}
+                aspect={currentAspect(gen)}
+                onNaturalSize={(width, height) => {
+                  const patch = sizePatchOf(gen, width, height);
+                  if (patch) updateNodeData(id, patch);
+                }}
+              />
+            </div>
           </div>
+
+          {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
           <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
             <Plus className="pointer-events-none size-3" />
@@ -206,7 +223,14 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             <Plus className="pointer-events-none size-3" />
           </Handle>
 
-          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
+          {actionItem && (
+            <NodeActionPanel
+              item={actionItem}
+              zoom={zoom}
+              mark={mark}
+              onMark={(next) => setNodeMark(id, next)}
+            />
+          )}
         </motion.div>
 
         {showMenu && (
@@ -327,9 +351,17 @@ function ResultArea({
 const CHIP_ICON = { image: ImageIcon, video: FileVideo, audio: Music } as const;
 
 /** 已连素材的实体格：图片缩略图，视频 / 音频显示种类图标 */
-function RefChip({ kind, url }: Pick<NodeMedia, "kind" | "url">) {
+/** 已连入的参考素材：图片出缩略图，视频 / 音频出图标。上游废弃的灰显 + 小叉 */
+type RefMedia = NodeMedia & { rejected: boolean };
+
+function RefChip({ kind, url, rejected }: Pick<RefMedia, "kind" | "url" | "rejected">) {
   return (
-    <div className="flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 text-muted-foreground">
+    <div
+      className={cn(
+        "relative flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 text-muted-foreground",
+        rejected && REJECTED_CHIP_CLASS,
+      )}
+    >
       {kind === "image" ? (
         // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
         <img
@@ -343,6 +375,7 @@ function RefChip({ kind, url }: Pick<NodeMedia, "kind" | "url">) {
       ) : (
         <ChipIcon kind={kind} />
       )}
+      {rejected && <ChipRejectedMark />}
     </div>
   );
 }
@@ -375,7 +408,7 @@ function RefPlaceholder({
  * 首尾帧模式：固定「首帧」「尾帧」两格（按连入顺序取前两张图），
  * 视频参考不支持不显示，音频照常。
  */
-function ReferenceChips({ refs, frames }: { refs: NodeMedia[]; frames: boolean }) {
+function ReferenceChips({ refs, frames }: { refs: RefMedia[]; frames: boolean }) {
   const images = refs.filter((item) => item.kind === "image");
   const videos = refs.filter((item) => item.kind === "video");
   const audios = refs.filter((item) => item.kind === "audio");
@@ -403,7 +436,10 @@ function ReferenceChips({ refs, frames }: { refs: NodeMedia[]; frames: boolean }
           return (
             <div
               key={label}
-              className="relative h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border bg-muted/40"
+              className={cn(
+                "relative h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border bg-muted/40",
+                item?.rejected && REJECTED_CHIP_CLASS,
+              )}
             >
               {item ? (
                 <>
@@ -416,6 +452,7 @@ function ReferenceChips({ refs, frames }: { refs: NodeMedia[]; frames: boolean }
                     decoding="async"
                     className="size-full object-cover"
                   />
+                  {item.rejected && <ChipRejectedMark />}
                   <span className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center text-[10px] text-white">
                     {label}
                   </span>
