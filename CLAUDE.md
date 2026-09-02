@@ -201,6 +201,10 @@ export type AppType = typeof app;
   等重渲染完这次 pointerdown 早处理完了）。`offsetY` 不受画布缩放影响，不用除 zoom。
 - 注册了自定义组件的内置类型（比如 `group`）仍然会套 React Flow 的默认样式，
   `.react-flow__node-group` 的白底 / 边框 / padding 要在 `globals.css` 里清掉。
+- **画布上别用 `bg-muted` 做区分底色**：浅色画布底是 `#F5F5F5`（`globals.css` 的
+  `.react-flow.light`），和 `--muted`（oklch 0.97）几乎同值，铺上去看不出来。
+  要和画布拉开的中性填充走 `bg-foreground/<n>`（编组是 `bg-foreground/8 dark:bg-muted`，
+  深色下 muted 比画布亮两档，够用）。
 - **「节点身上有没有素材」只有一份判断**：`lib/node-media.ts` 的 `nodeMediaOf()`，
   媒体节点看 `url`、生成节点看 `resultUrl`，都要求 `status === "ready"`。
   参考素材列表和批量下载共用它。这个判断以前散在三个文件里各写一遍，
