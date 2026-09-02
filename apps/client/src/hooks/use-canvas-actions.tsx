@@ -1,5 +1,6 @@
 "use client";
 
+import type { NodeMark } from "@aigc-flow/shared";
 import { createContext, type ReactNode, useContext } from "react";
 
 /**
@@ -12,6 +13,8 @@ import { createContext, type ReactNode, useContext } from "react";
 type CanvasActions = {
   /** 改节点名称，会进撤销栈 */
   renameNode: (nodeId: string, label: string) => void;
+  /** 给节点打标（null 清除），会进撤销栈。只对身上有素材的节点生效 */
+  setNodeMark: (nodeId: string, mark: NodeMark | null) => void;
   /**
    * 最近一次被单击的节点 id。用来区分「单击选中」和「框选 / 批量选中」：
    * 图像生成节点的配置菜单只在单击时展开，框选中不展开。

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nodeMarkSchema } from "./node-mark";
 
 /** 视频生成节点在 React Flow 里的 node.type */
 export const VIDEO_GEN_NODE_TYPE = "video-gen";
@@ -84,6 +85,8 @@ export const videoGenNodeDataSchema = z.object({
   /** 结果媒体的原始像素尺寸，加载完成后由前端探测写入，只用于信息条展示 */
   naturalWidth: z.number().positive().optional(),
   naturalHeight: z.number().positive().optional(),
+  /** 节点标记（采用 / 废弃），缺省即未标记。见 node-mark.ts */
+  mark: nodeMarkSchema.optional(),
   /** status 为 error 时的原因 */
   error: z.string().optional(),
 });

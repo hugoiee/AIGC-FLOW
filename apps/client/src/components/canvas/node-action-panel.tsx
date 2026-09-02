@@ -1,21 +1,34 @@
 "use client";
 
-import { Download, Maximize2 } from "lucide-react";
+import { NODE_MARK_LABEL, type NodeMark } from "@aigc-flow/shared";
+import { Check, Download, Maximize2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type DownloadItem, downloadMedia } from "@/lib/download";
+import { cn } from "@/lib/utils";
 
 /** 面板离节点右边缘的距离：要越过骑在边上的 source 端点（半径 10）再留点空 */
 const PANEL_GAP = 16;
 
 /**
- * 单击图像 / 视频生成节点后浮在结果区右侧的功能面板：下载、全屏（在新标签页打开原图）。
+ * 单击图像 / 视频生成节点后浮在结果区右侧的功能面板：下载、全屏（在新标签页打开原图）、
+ * 采用 / 废弃两个标记开关（点已激活的那个就清除）。
  * 多选工具条的批量下载要求至少选两个（排布、编组那几个按钮对单个节点没意义），
  * 单个节点的下载入口就落在这里。
  * 和下方的 prompt 菜单同款：用 1/zoom 反向缩放在屏幕上保持固定大小，
  * 挂在 relative 的结果区容器里、top 对齐结果区顶边。
  */
-export function NodeActionPanel({ item, zoom }: { item: DownloadItem; zoom: number }) {
+export function NodeActionPanel({
+  item,
+  zoom,
+  mark,
+  onMark,
+}: {
+  item: DownloadItem;
+  zoom: number;
+  mark: NodeMark | null;
+  onMark: (mark: NodeMark | null) => void;
+}) {
   return (
     <div
       className="nodrag absolute top-0 flex flex-col gap-1 rounded-xl border bg-card p-1 shadow-sm"
@@ -52,6 +65,49 @@ export function NodeActionPanel({ item, zoom }: { item: DownloadItem; zoom: numb
         </TooltipTrigger>
         <TooltipContent side="right">全屏查看</TooltipContent>
       </Tooltip>
+
+      <div className="mx-1 border-t" />
+
+      <MarkToggle value="keep" current={mark} onMark={onMark} icon={Check} />
+      <MarkToggle value="reject" current={mark} onMark={onMark} icon={X} />
     </div>
+  );
+}
+
+/** 标记开关：激活时按标记配色（采用绿、废弃灰），和角标同一套颜色 */
+function MarkToggle({
+  value,
+  current,
+  onMark,
+  icon: Icon,
+}: {
+  value: NodeMark;
+  current: NodeMark | null;
+  onMark: (mark: NodeMark | null) => void;
+  icon: typeof Check;
+}) {
+  const active = current === value;
+  const label = active ? `取消${NODE_MARK_LABEL[value]}` : `标记为${NODE_MARK_LABEL[value]}`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          aria-pressed={active}
+          onClick={() => onMark(active ? null : value)}
+          className={cn(
+            active &&
+              (value === "keep"
+                ? "bg-emerald-500 text-white hover:bg-emerald-500/90 hover:text-white"
+                : "bg-muted-foreground text-background hover:bg-muted-foreground/90 hover:text-background"),
+          )}
+        >
+          <Icon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }

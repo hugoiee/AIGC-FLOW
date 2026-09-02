@@ -61,6 +61,15 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 每次转发 `/aigc` 都在 `generations` 表记一条流水（完整请求 JSON、状态、
 视频时长），右上角的数据统计面板（`stats-dialog.tsx`）汇总次数与视频总秒数
 （自动时长的不计入、单独计数），供成本核算；`GET /api/generations`。
+**节点标记**：素材类节点（媒体 / 图像生成 / 视频生成）可标成「采用 / 废弃」，
+不标就是「还没审」（三态，刻意不做星级和颜色标签）。契约在
+`packages/shared/src/node-mark.ts`（`data.mark`），客户端只有 `lib/node-mark.ts` 一份判断
+（`nodeMarkOf` / `markableIds` / `markNodes`），能打标的判据和批量下载同一个 `nodeMediaOf`。
+画布上废弃的素材整块压暗去色 + 左上角灰叉角标，采用只有一个绿色对勾角标
+（`node-mark-badge.tsx`，1/zoom 反向缩放）。入口两个：单击节点右侧功能面板的两个开关，
+和多选工具条的「标记」下拉（选中编组时作用于组内成员）；没有快捷键。
+标记只是信息、不是锁：废弃的照样能连线当参考、照样会被批量下载，只在 prompt 的
+素材徽章上划线 + title 提示、预览卡标题带「（已废弃）」（`PromptMediaRef.rejected`）。
 音频生成节点尚未开发。
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
@@ -205,6 +214,13 @@ export type AppType = typeof app;
   `.react-flow.light`），和 `--muted`（oklch 0.97）几乎同值，铺上去看不出来。
   要和画布拉开的中性填充走 `bg-foreground/<n>`（编组是 `bg-foreground/8 dark:bg-muted`，
   深色下 muted 比画布亮两档，够用）。
+- **节点标记跟结果走，不跟节点走**：生成节点点「生成」进入 generating 的那个 patch 里
+  就把 `mark` 清掉（旧标记是给上一张打的，且 generating 时旧结果已经不显示）。
+  以后做结果历史（n>1）时 mark 应挪进每条结果记录里，现在放节点 data 上只是过渡。
+  打标要进撤销栈：节点内发起的走 `canvasActions.setNodeMark`（同 `renameNode`），
+  工具条批量的走 `applyLayout(markNodes)`；`markNodes` 一个都没变时返回原数组，
+  调用方据此跳过入栈。prompt 徽章不是 React 渲染的，废弃状态变化和改名走同一条
+  `useEffect` 同步路径（`syncRejected` 直接改 DOM 类名）。
 - **「节点身上有没有素材」只有一份判断**：`lib/node-media.ts` 的 `nodeMediaOf()`，
   媒体节点看 `url`、生成节点看 `resultUrl`，都要求 `status === "ready"`。
   参考素材列表和批量下载共用它。这个判断以前散在三个文件里各写一遍，
@@ -248,6 +264,9 @@ export type AppType = typeof app;
 - 嵌套编组：目前选区含编组或组内节点时按钮置灰，要支持得处理多层坐标变换、
   递归解组、递归收集组内素材。
 - 音频生成节点；图像生成的多张结果（n>1）与结果历史。
+- 节点标记第二期：「选中全部采用」（配合批量下载导出）、「删除所有废弃」（带确认）、
+  画布控制条的「隐藏废弃」开关（注意被隐藏的废弃图可能是某个视频的上游，
+  连边会一起藏掉、看不出血缘，要先想清楚再做）。
 - 单选下载：媒体 / 图像生成 / 视频生成节点单击后右侧浮出功能面板
   （`node-action-panel.tsx`，下载 + 全屏），单个下载走 `lib/download.ts` 的
   `downloadItemOf`。后续单节点的功能都往这个面板里加。多选工具条的批量下载阈值

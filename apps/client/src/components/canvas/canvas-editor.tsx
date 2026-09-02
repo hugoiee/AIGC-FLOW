@@ -8,6 +8,7 @@ import {
   IMAGE_GEN_NODE_TYPE,
   MEDIA_NODE_TYPE,
   type MediaNodeData,
+  type NodeMark,
   type Project,
   type ProjectGraph,
   remapPromptTokens,
@@ -57,6 +58,7 @@ import {
   type SpacingMode,
   spaceNodes,
 } from "@/lib/layout";
+import { markableIds, markNodes } from "@/lib/node-mark";
 import { AnimatedEdge } from "./animated-edge";
 import { CanvasControls } from "./canvas-controls";
 import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
@@ -261,6 +263,17 @@ export function CanvasEditor({
     [setNodes, commitNow],
   );
 
+  /** 节点右侧功能面板里的采用 / 废弃：和改名一样从节点内发起、要进历史 */
+  const setNodeMark = useCallback(
+    (nodeId: string, mark: NodeMark | null) => {
+      const next = markNodes(nodesRef.current, [nodeId], mark);
+      if (next === nodesRef.current) return;
+      setNodes(next);
+      commitNow(next, edgesRef.current);
+    },
+    [setNodes, commitNow],
+  );
+
   // 单击节点才记为 active（框选不触发 onNodeClick），图像生成节点据此决定是否展开菜单
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
@@ -407,8 +420,8 @@ export function CanvasEditor({
   );
 
   const canvasActions = useMemo(
-    () => ({ renameNode, activeNodeId, dropTargetId }),
-    [renameNode, activeNodeId, dropTargetId],
+    () => ({ renameNode, setNodeMark, activeNodeId, dropTargetId }),
+    [renameNode, setNodeMark, activeNodeId, dropTargetId],
   );
 
   /** 排布类操作统一走这里：算出新数组 → setNodes → 整体入历史栈，一次 ⌘Z 全退回 */
@@ -451,11 +464,26 @@ export function CanvasEditor({
     applyLayout((current) => ungroupNodes(current, groupId));
   }, [applyLayout, groupId]);
 
-  /** 选中的是编组时，要下的是组里的素材 —— 编组本身没有文件 */
-  const downloadItems = useMemo(() => {
-    const ids = groupId ? groupChildIds(nodes, groupId) : selectedIds;
-    return downloadableMedia(nodes, ids);
-  }, [nodes, selectedIds, groupId]);
+  /** 批量下载和批量标记作用的节点：选中的是编组时是组里的成员 —— 编组本身没有文件 */
+  const mediaTargetIds = useMemo(
+    () => (groupId ? groupChildIds(nodes, groupId) : selectedIds),
+    [nodes, selectedIds, groupId],
+  );
+
+  const downloadItems = useMemo(
+    () => downloadableMedia(nodes, mediaTargetIds),
+    [nodes, mediaTargetIds],
+  );
+
+  const markCount = useMemo(
+    () => markableIds(nodes, mediaTargetIds).length,
+    [nodes, mediaTargetIds],
+  );
+
+  const handleMark = useCallback(
+    (mark: NodeMark | null) => applyLayout((current) => markNodes(current, mediaTargetIds, mark)),
+    [applyLayout, mediaTargetIds],
+  );
 
   const handleDownload = useCallback(() => {
     void downloadMedia(downloadItems);
@@ -711,6 +739,8 @@ export function CanvasEditor({
               onSpace={handleSpace}
               onDownload={handleDownload}
               downloadCount={downloadItems.length}
+              onMark={handleMark}
+              markCount={markCount}
             />
 
             <Panel position="top-left">

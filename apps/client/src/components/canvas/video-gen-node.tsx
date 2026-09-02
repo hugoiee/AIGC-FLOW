@@ -52,12 +52,14 @@ import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { downloadItemOf } from "@/lib/download";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { nodeMarkOf } from "@/lib/node-mark";
 import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
+import { NodeMarkBadge, REJECTED_MEDIA_CLASS } from "./node-mark-badge";
 import { sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
@@ -72,10 +74,11 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
-  const { activeNodeId, dropTargetId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: VIDEO_GEN_NODE_TYPE, data }) : null;
+  const mark = nodeMarkOf({ type: VIDEO_GEN_NODE_TYPE, data });
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
 
@@ -108,12 +111,14 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   /** 点生成：同图像节点的状态机。内网接口同步阻塞，视频可能要等几分钟 */
   async function handleGenerate() {
     if (generating) return;
-    // 清掉上一条的尺寸：新视频加载出来之前，信息条不该还挂着旧数字
+    // 清掉上一条的尺寸：新视频加载出来之前，信息条不该还挂着旧数字。
+    // 标记跟结果走：采用 / 废弃是给上一个结果打的，一起清掉
     updateNodeData(id, {
       status: "generating",
       error: undefined,
       naturalWidth: undefined,
       naturalHeight: undefined,
+      mark: undefined,
     });
 
     try {
@@ -180,15 +185,19 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
-            <ResultArea
-              gen={gen}
-              aspect={currentAspect(gen)}
-              onNaturalSize={(width, height) => {
-                const patch = sizePatchOf(gen, width, height);
-                if (patch) updateNodeData(id, patch);
-              }}
-            />
+            <div className={cn(mark === "reject" && REJECTED_MEDIA_CLASS)}>
+              <ResultArea
+                gen={gen}
+                aspect={currentAspect(gen)}
+                onNaturalSize={(width, height) => {
+                  const patch = sizePatchOf(gen, width, height);
+                  if (patch) updateNodeData(id, patch);
+                }}
+              />
+            </div>
           </div>
+
+          {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
           <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
             <Plus className="pointer-events-none size-3" />
@@ -206,7 +215,14 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             <Plus className="pointer-events-none size-3" />
           </Handle>
 
-          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
+          {actionItem && (
+            <NodeActionPanel
+              item={actionItem}
+              zoom={zoom}
+              mark={mark}
+              onMark={(next) => setNodeMark(id, next)}
+            />
+          )}
         </motion.div>
 
         {showMenu && (

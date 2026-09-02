@@ -19,10 +19,12 @@ import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "re
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { downloadItemOf } from "@/lib/download";
 import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
+import { nodeMarkOf } from "@/lib/node-mark";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
+import { NodeMarkBadge, REJECTED_MEDIA_CLASS } from "./node-mark-badge";
 import { sizePatchOf } from "./node-size";
 
 const KIND_ICON = { image: FileImage, video: FileVideo, audio: Music } as const;
@@ -63,11 +65,12 @@ export function MediaNode({ id, data, selected }: NodeProps) {
   const Icon = KIND_ICON[media.kind];
   const { updateNode, updateNodeData } = useReactFlow();
   const freeResize = useShiftKey(Boolean(selected));
-  // 信息条和右侧面板要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放。
-  // 没选中时没有这两样东西，返回常量免得每个媒体节点都跟着缩放重渲
-  const zoom = useStore((state) => (selected ? state.transform[2] : 1));
+  const mark = nodeMarkOf({ type: MEDIA_NODE_TYPE, data });
+  // 信息条、右侧面板和标记角标要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放。
+  // 没选中也没标记时没有这几样东西，返回常量免得每个媒体节点都跟着缩放重渲
+  const zoom = useStore((state) => (selected || mark ? state.transform[2] : 1));
   // 右侧功能面板只在「单击选中」时出现（框选不出），和生成节点的菜单同一判据
-  const { activeNodeId } = useCanvasActions();
+  const { activeNodeId, setNodeMark } = useCanvasActions();
   const actionItem =
     selected && activeNodeId === id ? downloadItemOf({ id, type: MEDIA_NODE_TYPE, data }) : null;
 
@@ -133,8 +136,12 @@ export function MediaNode({ id, data, selected }: NodeProps) {
           (isAudio || isPlaceholder) && "rounded-md",
         )}
       >
-        <MediaBody media={media} onNaturalSize={handleNaturalSize} />
+        <div className={cn("size-full", mark === "reject" && REJECTED_MEDIA_CLASS)}>
+          <MediaBody media={media} onNaturalSize={handleNaturalSize} />
+        </div>
       </div>
+
+      {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
       {/*
         媒体节点是纯资源产出方，只往外连，所以没有左侧 target。
@@ -155,7 +162,14 @@ export function MediaNode({ id, data, selected }: NodeProps) {
         <Plus className="pointer-events-none size-3" />
       </Handle>
 
-      {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
+      {actionItem && (
+        <NodeActionPanel
+          item={actionItem}
+          zoom={zoom}
+          mark={mark}
+          onMark={(next) => setNodeMark(id, next)}
+        />
+      )}
     </>
   );
 }
