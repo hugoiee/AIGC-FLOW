@@ -13,7 +13,7 @@ import { generations } from "../db/schema";
 import { getAppSettings } from "../db/settings";
 import { messageOf, snippet } from "../lib/upstream";
 
-/** 内网 /aigc 的返回结构（docs/接口文档.md） */
+/** 内网 /aigc 的返回结构 */
 type AigcResponse = {
   result?: {
     content?: string[];

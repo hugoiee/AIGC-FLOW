@@ -3,7 +3,7 @@ import { messageOf, snippet } from "../lib/upstream";
 
 /**
  * 内网上传服务的返回。图像/视频（/api/upload）和音频（/api/upload-media）
- * 两个端点实测都是这个形状，docs/接口文档.md 里写的 { urls: [...] } 是错的。
+ * 两个端点实测都是这个形状，接口文档里写的 { urls: [...] } 是错的。
  */
 type UploadResponse = {
   files?: Array<{ url?: string; filename?: string; status?: string; error?: string }>;
@@ -12,7 +12,7 @@ type UploadResponse = {
 
 /**
  * 内网接口按媒体种类分了两个端点：音频与图像/视频各一个完整地址，
- * 都在设置面板里配置（存 settings 表），见 docs/接口文档.md。
+ * 都在设置面板里配置（存 settings 表）。
  */
 function remoteEndpoint(kind: MediaKind, settings: AppSettings): string {
   return kind === "audio" ? settings.audioUploadUrl : settings.imageUploadUrl;

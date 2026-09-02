@@ -4,7 +4,7 @@ import { z } from "zod";
 export const VIDEO_GEN_NODE_TYPE = "video-gen";
 
 /**
- * seedance 版本。apiVersion 对应内网接口的 version 字段（docs/接口文档.md），
+ * seedance 版本。apiVersion 对应内网接口的 version 字段，
  * 两个版本的分辨率与时长范围不同，收敛规则见 clampVideoConfig。
  */
 export const VIDEO_VERSIONS = [
