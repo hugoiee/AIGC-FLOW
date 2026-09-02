@@ -61,6 +61,8 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 多选资源时选区右侧有浮动连线端点（`floating-connector.tsx`）：落到可接受节点上
 批量连线，落到空白或不能接受的节点上会在松手处弹节点选择菜单
 （`node-picker-menu.tsx`，不能连的类型禁用，选择后原地建节点并接线，期间虚线不消失）；
+单个资源节点从右侧端点拉线落空 / 落错时同样弹这个菜单（`onConnectEnd` 里判断，React Flow
+自己的连线松手即消失，用浮动连线那条虚线接着画，起点是 `connectionState.from` 换屏幕坐标）；
 右键画布空白也弹这个菜单（因此选择模式的平移只剩中键和空格+左键，右键让给了菜单；
 空格是 React Flow 的 `panActivationKeyCode` 默认值，白捡的）。
 连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。

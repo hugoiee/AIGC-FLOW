@@ -138,7 +138,8 @@ export function CanvasEditor({
   const [mode, setMode] = useState<CanvasMode>("select");
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const { screenToFlowPosition, getViewport, getIntersectingNodes } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition, getViewport, getIntersectingNodes } =
+    useReactFlow();
   // React Flow 的节点 / 控制条 / 小地图有自己一套 CSS 变量，不吃我们的 .dark，
   // 必须显式把主题传给它的 colorMode，否则暗色下节点是白底白字，完全看不见
   const { resolvedTheme } = useTheme();
@@ -277,7 +278,7 @@ export function CanvasEditor({
   // 单击节点才记为 active（框选不触发 onNodeClick），图像生成节点据此决定是否展开菜单
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
-  // 浮动端点拖出的连线（屏幕坐标）与节点选择菜单。弹菜单期间连线保持显示
+  // 浮动端点 / 单节点端点拖出的连线（屏幕坐标）与节点选择菜单。弹菜单期间连线保持显示
   const [floatLine, setFloatLine] = useState<FloatLine | null>(null);
   const [picker, setPicker] = useState<NodePickerRequest | null>(null);
 
@@ -682,13 +683,15 @@ export function CanvasEditor({
               connectDragCleanupRef.current?.();
               connectDragCleanupRef.current = null;
               setDropTargetId(null);
-              // 拖普通端点的线松手在节点身上（没落在 target 端点上）也算连上
+              // 落在 target 端点上的 React Flow 自己会连，这里不管
               if (connectionState.isValid) return;
               const fromNode = connectionState.fromNode;
               if (!fromNode || connectionState.fromHandle?.type !== "source") return;
-              const point = "changedTouches" in event ? event.changedTouches[0] : event;
-              if (!point) return;
-              const flow = screenToFlowPosition({ x: point.clientX, y: point.clientY });
+              const touch = "changedTouches" in event ? event.changedTouches[0] : event;
+              if (!touch) return;
+              const point = { x: touch.clientX, y: touch.clientY };
+              const flow = screenToFlowPosition(point);
+              // 松手在节点身上（没落在 target 端点上）也算连上
               const target = getIntersectingNodes({
                 x: flow.x,
                 y: flow.y,
@@ -702,7 +705,14 @@ export function CanvasEditor({
                   target: target.id,
                   targetHandle: null,
                 });
+                return;
               }
+              // 落在空白或不能接受的节点上：和浮动端点一样，原地弹节点选择菜单。
+              // React Flow 自己的连线松手就没了，用浮动连线那条虚线接着画，
+              // 起点取 connectionState.from（端点中心，画布坐标）换成屏幕坐标
+              if (sourceResourceOf(fromNode) === null) return;
+              setFloatLine({ from: flowToScreenPosition(connectionState.from), to: point });
+              setPicker({ screen: point, flow, sourceIds: [fromNode.id] });
             }}
             onPaneContextMenu={(event) => {
               event.preventDefault();
