@@ -76,25 +76,23 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
-  const { badges, images, resolvedPrompt, resolvedImageUrls } = usePromptTokens(
+  const isFrames = gen.mode === "first_last_frame";
+  // 首尾帧模式只取前两张图（首帧、尾帧）。image_list 直接用 hook 给的 imageUrls：
+  // prompt 里 @ 引用的占位符序号对应它的下标，两者必须出自同一份列表
+  const { badges, images, resolvedPrompt, imageUrls } = usePromptTokens(
     id,
     gen.prompt,
     sources,
+    isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES,
   );
   const refs = sources
     .map((node) => nodeMediaOf(node))
     .filter((item): item is NodeMedia => item !== null);
 
-  const isFrames = gen.mode === "first_last_frame";
-  // 按种类分流到接口的三个入参；首尾帧模式只取前两张图（首帧、尾帧），不支持参考视频
+  // 按种类分流到接口的三个入参；首尾帧模式不支持参考视频
   const imageRefs = refs
     .filter((item) => item.kind === "image")
     .slice(0, isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES);
-  // 参考图模式下 image_list 用 @ 引用重排过的顺序（占位符按位置对应）；
-  // 首尾帧模式的两张图位置就是语义（首帧、尾帧），不能被引用顺序打乱
-  const imageList = isFrames
-    ? imageRefs.map((item) => item.url)
-    : resolvedImageUrls.slice(0, MAX_REFERENCE_IMAGES);
   const videoRefs = isFrames
     ? []
     : refs.filter((item) => item.kind === "video").slice(0, MAX_VIDEO_REFS);
@@ -119,7 +117,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
           version: gen.version,
           mode: gen.mode,
           prompt: resolvedPrompt,
-          imageList,
+          imageList: imageUrls,
           videoList: videoRefs.map((item) => item.url),
           audioList: audioRefs.map((item) => item.url),
           resolution: gen.resolution,

@@ -66,10 +66,16 @@ function promptImageRefOf(node: NonNullable<UpstreamNode>): PromptImageRef {
  * - 新连上的文本节点把徽章 token 追加到 prompt 末尾，断线的移除
  *   （用户手动删掉徽章但连线还在的不动，位置语义以徽章为准，断线重连可重新插入）
  * - 图片不自动插入（@ 是用户的显式动作），但断线时同样移除对应徽章
- * - badges / images 给编辑器渲染徽章，resolvedPrompt 与 resolvedImageUrls 是
- *   发请求用的最终文本和 image_list（被 @ 引用的图按出现顺序排在前面）
+ * - badges / images 给编辑器渲染徽章；imageUrls 是发请求用的 image_list
+ *   （已就绪的连入图按连线顺序、截到 maxImages 张），resolvedPrompt 里的图片徽章
+ *   换成了带序号的占位符，序号对应 imageUrls 的下标 —— 两者必须一起发
  */
-export function usePromptTokens(nodeId: string, prompt: string, sources: UpstreamNode[]) {
+export function usePromptTokens(
+  nodeId: string,
+  prompt: string,
+  sources: UpstreamNode[],
+  maxImages: number,
+) {
   const { updateNodeData } = useReactFlow();
 
   const textSources = useMemo(
@@ -120,22 +126,24 @@ export function usePromptTokens(nodeId: string, prompt: string, sources: Upstrea
     [textSources],
   );
 
-  const resolved = useMemo(() => {
+  const ready = useMemo(
+    () =>
+      images
+        .filter((image): image is PromptImageRef & { url: string } => Boolean(image.url))
+        .slice(0, maxImages),
+    [images, maxImages],
+  );
+
+  const resolvedPrompt = useMemo(() => {
     const textById = new Map(
       textSources.map((node) => [node.id, (node.data as unknown as TextNodeData).text]),
     );
-    const ready = images.filter((image): image is PromptImageRef & { url: string } =>
-      Boolean(image.url),
-    );
     return resolveImageRefs(resolvePromptText(prompt, textById), ready);
-  }, [prompt, textSources, images]);
+  }, [prompt, textSources, ready]);
 
-  return {
-    badges,
-    images,
-    resolvedPrompt: resolved.prompt,
-    resolvedImageUrls: resolved.imageUrls,
-  };
+  const imageUrls = useMemo(() => ready.map((image) => image.url), [ready]);
+
+  return { badges, images, resolvedPrompt, imageUrls };
 }
 
 /** 把编辑器 DOM 序列化回带 token 的 prompt 字符串 */

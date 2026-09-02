@@ -17,53 +17,28 @@ export const IMAGE_TOKEN_RE = /\{\{image:([0-9a-zA-Z-]+)\}\}/g;
 const IMAGE_TOKEN_WITH_SPACE_RE = /([ \t]*)\{\{image:([0-9a-zA-Z-]+)\}\}/g;
 
 /**
- * 模型认的图片占位符。图片在请求里是按 image_list 顺序排的队列，
- * prompt 里每个占位符按出现顺序对应队列里的一张 —— 所以 resolveImageRefs
- * 会把被引用的图按徽章出现顺序排到 image_list 前面。
- * 内网联调后如果要改成带序号的形式（比如 <<<image1>>>），
- * 改这里的 placeholderOf 一处即可，index 从 1 数起。
+ * 模型认的图片占位符：序号就是这张图在 image_list 里的位置（从 1 数起）。
+ * image_list 保持连线顺序不动，引用只是告诉模型「用列表里的第几张」，
+ * 所以同一张图引用几次列表里都只有一张。内网联调后若格式有出入，改这一处。
  */
-export const IMAGE_REF_PLACEHOLDER = "<<<image>>>";
-
-function placeholderOf(_index: number): string {
-  return IMAGE_REF_PLACEHOLDER;
+export function imagePlaceholderOf(index: number): string {
+  return `<<<image${index}>>>`;
 }
 
 export type ImageRefSource = { id: string; url: string };
 
-export type ResolvedImageRefs = {
-  /** token 已换成占位符的 prompt */
-  prompt: string;
-  /** 发请求用的 image_list：先是徽章按出现顺序引用的图，再补上没被引用的连入图 */
-  imageUrls: string[];
-};
-
 /**
- * 发请求前处理 prompt 里的图片引用：
- * - 引用了已连入图片的 token 换成占位符，并把这张图按引用顺序排进队列
- *   （同一张图引用两次就在队列里出现两次，位置语义要求一一对应）
- * - 引用的图已经不在（断线、还没上传完）的 token 直接移除
- * - 没被引用的连入图按原顺序追加到队列末尾，不引用也照样是参考图
+ * 发请求前处理 prompt 里的图片引用。images 必须是**实际发出去的 image_list**
+ * （已就绪、已按上限截断），占位符的序号按它的下标算：
+ * - 引用了列表里图片的 token 换成带序号的占位符
+ * - 引用的图不在列表里（断线、还没上传完、超出上限）的 token 直接移除，连同前导空格
  */
-export function resolveImageRefs(
-  prompt: string,
-  images: readonly ImageRefSource[],
-): ResolvedImageRefs {
-  const urlById = new Map(images.map((image) => [image.id, image.url]));
-  const referenced: string[] = [];
-  const referencedIds = new Set<string>();
-
-  const resolved = prompt
+export function resolveImageRefs(prompt: string, images: readonly ImageRefSource[]): string {
+  const indexById = new Map(images.map((image, index) => [image.id, index + 1]));
+  return prompt
     .replace(IMAGE_TOKEN_WITH_SPACE_RE, (_, space: string, id: string) => {
-      const url = urlById.get(id);
-      if (url === undefined) return "";
-      referenced.push(url);
-      referencedIds.add(id);
-      return space + placeholderOf(referenced.length);
+      const index = indexById.get(id);
+      return index === undefined ? "" : space + imagePlaceholderOf(index);
     })
     .trim();
-
-  const rest = images.filter((image) => !referencedIds.has(image.id)).map((image) => image.url);
-
-  return { prompt: resolved, imageUrls: [...referenced, ...rest] };
 }

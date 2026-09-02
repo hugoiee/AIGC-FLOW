@@ -68,10 +68,11 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
-  const { badges, images, resolvedPrompt, resolvedImageUrls } = usePromptTokens(
+  const { badges, images, resolvedPrompt, imageUrls } = usePromptTokens(
     id,
     gen.prompt,
     sources,
+    MAX_REFERENCE_IMAGES,
   );
   // id 是源节点 id：同一张图可以连入多次，chips 的 React key 必须用它而不是 url
   const referenceItems = images.filter(
@@ -99,8 +100,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
         json: {
           model: gen.model,
           prompt: resolvedPrompt,
-          // 被 @ 引用的图按徽章顺序排在前面，占位符按位置对应队列里的图
-          imageList: resolvedImageUrls.slice(0, MAX_REFERENCE_IMAGES),
+          // prompt 里 @ 引用的占位符序号对应这个列表的下标，两者出自同一个 hook
+          imageList: imageUrls,
           quality: gen.quality,
           sizePreset: gen.sizePreset,
           aspectRatio: gen.aspectRatio,
