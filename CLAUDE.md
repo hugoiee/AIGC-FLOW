@@ -29,7 +29,13 @@ image_list / video_list / audio_list），结果显示在节点上方，右侧 s
 悬停看正文；和三种素材徽章的绿 / 蓝 / 紫区分开）：prompt 存
 `{{text:<节点id>}}` token（数据契约，见 `packages/shared/src/text-node.ts`），
 输入框是 contentEditable（`prompt-editor.tsx`），发请求前按 token 位置替换成
-文本内容。连线增删与 token 同步的规则：新连线追加到末尾、断线移除、
+文本内容。提示词多到出滚动条时输入框右下角露出「放大」按钮（`onExpand`），点了由
+生成节点把**整个浮动菜单**（参考素材 + 提示词 + 底部选项 + 生成按钮）放大成盖住画面的
+弹层（`gen-menu-dialog.tsx`）；节点里和弹层里是同一个 `renderMenu(large)` 渲染的两份，
+弹层里的编辑器不传 `onExpand` 防套娃。
+**@ 菜单是 portal 到 body 的**，Dialog 打开时 body 是 `pointer-events:none`，菜单要自己
+`pointer-events-auto`；点菜单不能算「点到弹层外面」（`onInteractOutside` 里按
+`[role="listbox"]` 放行）；Escape 先收 @ 菜单再关弹层（编辑器里 `stopPropagation`）。连线增删与 token 同步的规则：新连线追加到末尾、断线移除、
 手动删掉徽章不补回（断线重连可重新插入）。
 **「不补回」是靠 `usePromptTokens` 的挂载守卫实现的：首次运行一律视为已同步。**
 所以「节点带着连线一起诞生」的路径（菜单里当场建生成节点）必须由创建方
