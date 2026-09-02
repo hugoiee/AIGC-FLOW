@@ -32,10 +32,6 @@ export function textTokenOf(nodeId: string): string {
 /** 匹配所有 token；捕获组 1 是节点 id。split 场景用它的带括号形态保留分隔项 */
 export const TEXT_TOKEN_RE = /\{\{text:([0-9a-zA-Z-]+)\}\}/g;
 
-/** 同上，但把 token 前面的空格也吃进来（捕获组 1 空格、组 2 节点 id）。
-    清掉 token 时用它，避免「美人鱼 {{token}} 黄昏」删完剩下两个空格 */
-const TEXT_TOKEN_WITH_SPACE_RE = /([ \t]*)\{\{text:([0-9a-zA-Z-]+)\}\}/g;
-
 /**
  * 连线变化时同步 prompt 里的 token：
  * - 新连上的文本节点（added）在末尾追加徽章（已有就不重复加）
@@ -58,22 +54,6 @@ export function syncPromptTokens(prompt: string, added: string[], removed: strin
   }
 
   return next;
-}
-
-/**
- * 复制粘贴时重写 prompt 里的 token。
- * 源文本节点跟着一起粘的换成它的新 id；没跟着粘的直接清掉 ——
- * 连线只在两端都被复制时才会带过来，留着这种 token 只会得到一个
- * 连不到任何东西的空徽章，发请求时也会被 resolvePromptText 丢掉。
- * 清 token 时连它前面的空格一起去掉，免得原地留下双空格。
- */
-export function remapPromptTokens(prompt: string, idMap: ReadonlyMap<string, string>): string {
-  return prompt
-    .replace(TEXT_TOKEN_WITH_SPACE_RE, (_, space: string, id: string) => {
-      const mapped = idMap.get(id);
-      return mapped ? space + textTokenOf(mapped) : "";
-    })
-    .trim();
 }
 
 /** 发请求前把 token 换成对应文本节点的内容；没有对应内容的 token 直接移除 */

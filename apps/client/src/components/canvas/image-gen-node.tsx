@@ -37,7 +37,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
 import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
-import { nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
@@ -55,16 +54,6 @@ function currentAspect(gen: ImageGenNodeData): number {
   return w / h;
 }
 
-/**
- * 从上游节点里取出能作为参考图的 URL：图片媒体节点的 url，或另一个
- * 图像生成节点的结果图 —— 生成结果可以链式引用。图像模型只吃图，
- * 所以在共用的 nodeMediaOf 之上再按种类筛一道。
- */
-export function referenceUrlOf(node: { id: string; type?: string; data: unknown }): string | null {
-  const media = nodeMediaOf(node);
-  return media?.kind === "image" ? media.url : null;
-}
-
 export function ImageGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as ImageGenNodeData;
   const { updateNodeData } = useReactFlow();
@@ -79,15 +68,15 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
-  const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
+  const { badges, images, resolvedPrompt, resolvedImageUrls } = usePromptTokens(
+    id,
+    gen.prompt,
+    sources,
+  );
   // id 是源节点 id：同一张图可以连入多次，chips 的 React key 必须用它而不是 url
-  const referenceItems = sources
-    .map((node) => {
-      const url = node ? referenceUrlOf(node) : null;
-      return node && url ? { id: node.id, url } : null;
-    })
-    .filter((item): item is { id: string; url: string } => item !== null);
-  const referenceUrls = referenceItems.map((item) => item.url);
+  const referenceItems = images.filter(
+    (image): image is { id: string; label: string; url: string } => Boolean(image.url),
+  );
 
   const generating = gen.status === "generating";
 
@@ -110,7 +99,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
         json: {
           model: gen.model,
           prompt: resolvedPrompt,
-          imageList: referenceUrls.slice(0, MAX_REFERENCE_IMAGES),
+          // 被 @ 引用的图按徽章顺序排在前面，占位符按位置对应队列里的图
+          imageList: resolvedImageUrls.slice(0, MAX_REFERENCE_IMAGES),
           quality: gen.quality,
           sizePreset: gen.sizePreset,
           aspectRatio: gen.aspectRatio,
@@ -213,6 +203,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
               <PromptEditor
                 value={gen.prompt}
                 badges={badges}
+                images={images}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
               />

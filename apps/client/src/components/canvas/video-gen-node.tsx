@@ -76,7 +76,11 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
-  const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
+  const { badges, images, resolvedPrompt, resolvedImageUrls } = usePromptTokens(
+    id,
+    gen.prompt,
+    sources,
+  );
   const refs = sources
     .map((node) => nodeMediaOf(node))
     .filter((item): item is NodeMedia => item !== null);
@@ -86,6 +90,11 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const imageRefs = refs
     .filter((item) => item.kind === "image")
     .slice(0, isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES);
+  // 参考图模式下 image_list 用 @ 引用重排过的顺序（占位符按位置对应）；
+  // 首尾帧模式的两张图位置就是语义（首帧、尾帧），不能被引用顺序打乱
+  const imageList = isFrames
+    ? imageRefs.map((item) => item.url)
+    : resolvedImageUrls.slice(0, MAX_REFERENCE_IMAGES);
   const videoRefs = isFrames
     ? []
     : refs.filter((item) => item.kind === "video").slice(0, MAX_VIDEO_REFS);
@@ -110,7 +119,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
           version: gen.version,
           mode: gen.mode,
           prompt: resolvedPrompt,
-          imageList: imageRefs.map((item) => item.url),
+          imageList,
           videoList: videoRefs.map((item) => item.url),
           audioList: audioRefs.map((item) => item.url),
           resolution: gen.resolution,
@@ -204,6 +213,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               <PromptEditor
                 value={gen.prompt}
                 badges={badges}
+                images={images}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
               />
