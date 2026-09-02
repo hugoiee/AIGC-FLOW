@@ -80,7 +80,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
-  const { activeNodeId, dropTargetId, setNodeMark, projectId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark, duplicateNode, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: VIDEO_GEN_NODE_TYPE, data }) : null;
@@ -244,6 +244,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               zoom={zoom}
               mark={mark}
               onMark={(next) => setNodeMark(id, next)}
+              onDuplicate={() => duplicateNode(id)}
             />
           )}
         </motion.div>

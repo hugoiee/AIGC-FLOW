@@ -289,8 +289,11 @@ export type AppType = typeof app;
   递归解组、递归收集组内素材。
 - 音频生成节点；图像生成的多张结果（n>1）与结果历史。
 - 单选下载：媒体 / 图像生成 / 视频生成节点单击后右侧浮出功能面板
-  （`node-action-panel.tsx`，下载 + 全屏），单个下载走 `lib/download.ts` 的
-  `downloadItemOf`。后续单节点的功能都往这个面板里加。多选工具条的批量下载阈值
+  （`node-action-panel.tsx`，下载 + 全屏 + 原样复制 + 采用 / 废弃），单个下载走
+  `lib/download.ts` 的 `downloadItemOf`。后续单节点的功能都往这个面板里加。
+  原样复制走 `canvasActions.duplicateNode`：抄节点本身（含结果和标记）和从上游过来的
+  连线，上游节点不动、下游连线不抄，副本偏移 40px 压在原节点上并成为唯一选中 / active 的
+  节点。prompt 里的徽章 token 指向的是上游节点 id，上游没变所以原样有效。多选工具条的批量下载阈值
   （`SELECTION_TOOLBAR_MIN = 2`）不要动 —— 排布、编组那几个按钮对单个节点没意义。
 - 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回

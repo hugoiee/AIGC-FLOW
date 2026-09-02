@@ -70,7 +70,7 @@ export function MediaNode({ id, data, selected }: NodeProps) {
   // 没选中也没标记时没有这几样东西，返回常量免得每个媒体节点都跟着缩放重渲
   const zoom = useStore((state) => (selected || mark ? state.transform[2] : 1));
   // 右侧功能面板只在「单击选中」时出现（框选不出），和生成节点的菜单同一判据
-  const { activeNodeId, setNodeMark } = useCanvasActions();
+  const { activeNodeId, setNodeMark, duplicateNode } = useCanvasActions();
   const actionItem =
     selected && activeNodeId === id ? downloadItemOf({ id, type: MEDIA_NODE_TYPE, data }) : null;
 
@@ -168,6 +168,7 @@ export function MediaNode({ id, data, selected }: NodeProps) {
           zoom={zoom}
           mark={mark}
           onMark={(next) => setNodeMark(id, next)}
+          onDuplicate={() => duplicateNode(id)}
         />
       )}
     </>
