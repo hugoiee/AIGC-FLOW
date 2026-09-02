@@ -9,6 +9,9 @@
 /** 参考图 chips 的缩略宽度（56px 格子 × 2 倍屏富余） */
 export const THUMB_WIDTH = 128;
 
+/** prompt 里 @ 徽章悬停预览的缩略宽度（160px 预览框 × 2 倍屏富余） */
+export const PREVIEW_WIDTH = 320;
+
 /** 节点画面区的渲染宽度（节点宽 534 × 2 倍屏富余） */
 export const CANVAS_WIDTH = 1080;
 

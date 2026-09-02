@@ -22,8 +22,6 @@ import {
   Background,
   BackgroundVariant,
   type Connection,
-  ControlButton,
-  Controls,
   type Edge,
   MiniMap,
   type Node,
@@ -35,7 +33,6 @@ import {
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
-import { Map as MapIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { type DragEvent, useCallback, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -61,6 +58,7 @@ import {
   spaceNodes,
 } from "@/lib/layout";
 import { AnimatedEdge } from "./animated-edge";
+import { CanvasControls } from "./canvas-controls";
 import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
 import { FloatingConnector, type FloatLine } from "./floating-connector";
 import { GroupNode } from "./group-node";
@@ -673,8 +671,11 @@ export function CanvasEditor({
             edgeTypes={EDGE_TYPES}
             colorMode={resolvedTheme === "dark" ? "dark" : "light"}
             defaultViewport={initialViewport}
-            minZoom={0.2}
+            // 下限对齐控制条里的 10% 档位
+            minZoom={0.1}
             maxZoom={2}
+            // 右下角的 React Flow 角标不要
+            proOptions={{ hideAttribution: true }}
             deleteKeyCode={["Backspace", "Delete"]}
             multiSelectionKeyCode={["Meta", "Shift"]}
             // 选择模式：左键框选，平移让给中键（右键留给节点选择菜单），节点可拖
@@ -741,17 +742,15 @@ export function CanvasEditor({
               />
             </Panel>
 
-            <Controls orientation="horizontal" position="bottom-left">
-              <ControlButton
-                onClick={() => setShowMiniMap((value) => !value)}
-                title={showMiniMap ? "隐藏缩略图" : "显示缩略图"}
-              >
-                <MapIcon />
-              </ControlButton>
-            </Controls>
-            {/* marginBottom 抬到水平控制条上方，两个面板同在左下角 */}
+            <Panel position="bottom-left">
+              <CanvasControls
+                showMiniMap={showMiniMap}
+                onToggleMiniMap={() => setShowMiniMap((value) => !value)}
+              />
+            </Panel>
+            {/* marginBottom 抬到控制条上方，两个面板同在左下角 */}
             {showMiniMap && (
-              <MiniMap pannable zoomable position="bottom-left" style={{ marginBottom: 48 }} />
+              <MiniMap pannable zoomable position="bottom-left" style={{ marginBottom: 56 }} />
             )}
           </ReactFlow>
 

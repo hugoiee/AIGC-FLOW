@@ -8,6 +8,7 @@ import {
   MAX_REFERENCE_IMAGES,
   MAX_VIDEO_REFS,
   type MediaKind,
+  VIDEO_GEN_NODE_TYPE,
   VIDEO_MODES,
   VIDEO_RATIOS,
   VIDEO_VERSIONS,
@@ -49,13 +50,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { downloadItemOf } from "@/lib/download";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
-import { NodeName } from "./node-name";
-import { NodeSizeLabel, sizePatchOf } from "./node-size";
+import { NodeActionPanel } from "./node-action-panel";
+import { NodeInfoBar } from "./node-info-bar";
+import { sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** 占位区宽高比跟随所选比例；adaptive（自适应）没有具体值，退回 16:9 */
@@ -71,25 +74,34 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const zoom = useStore((state) => state.transform[2]);
   const { activeNodeId, dropTargetId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
+  // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
+  const actionItem = showMenu ? downloadItemOf({ id, type: VIDEO_GEN_NODE_TYPE, data }) : null;
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
 
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
-  const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
-  const refs = sources
+  const isFrames = gen.mode === "first_last_frame";
+  // 三个列表的上限对齐接口约定：首尾帧模式只取前两张图（首帧、尾帧）、不支持参考视频。
+  // 发请求用的 image_list / video_list / audio_list 直接用 hook 给的 urls：
+  // prompt 里 @ 引用的占位符序号对应各列表的下标，必须出自同一份列表
+  const { texts, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
+    image: isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES,
+    video: isFrames ? 0 : MAX_VIDEO_REFS,
+    audio: MAX_AUDIO_REFS,
+  });
+  const media = sources
     .map((node) => nodeMediaOf(node))
     .filter((item): item is NodeMedia => item !== null);
 
-  const isFrames = gen.mode === "first_last_frame";
-  // 按种类分流到接口的三个入参；首尾帧模式只取前两张图（首帧、尾帧），不支持参考视频
-  const imageRefs = refs
+  // 参考素材 chips 按种类分组展示，上限同上
+  const imageRefs = media
     .filter((item) => item.kind === "image")
     .slice(0, isFrames ? MAX_FRAME_IMAGES : MAX_REFERENCE_IMAGES);
   const videoRefs = isFrames
     ? []
-    : refs.filter((item) => item.kind === "video").slice(0, MAX_VIDEO_REFS);
-  const audioRefs = refs.filter((item) => item.kind === "audio").slice(0, MAX_AUDIO_REFS);
+    : media.filter((item) => item.kind === "video").slice(0, MAX_VIDEO_REFS);
+  const audioRefs = media.filter((item) => item.kind === "audio").slice(0, MAX_AUDIO_REFS);
 
   const generating = gen.status === "generating";
 
@@ -110,9 +122,9 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
           version: gen.version,
           mode: gen.mode,
           prompt: resolvedPrompt,
-          imageList: imageRefs.map((item) => item.url),
-          videoList: videoRefs.map((item) => item.url),
-          audioList: audioRefs.map((item) => item.url),
+          imageList: urls.image,
+          videoList: urls.video,
+          audioList: urls.audio,
           resolution: gen.resolution,
           ratio: gen.ratio,
           duration: gen.duration,
@@ -139,16 +151,15 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   return (
     <>
       {selected && (
-        <div
-          className="-top-6 pointer-events-none absolute inset-x-0 flex items-center text-xs"
-          style={{ color: GEN_ACCENT }}
-        >
-          <span className="flex min-w-0 items-center gap-1">
-            <Clapperboard className="size-3.5 shrink-0" />
-            <NodeName nodeId={id} label={gen.label} />
-          </span>
-          <NodeSizeLabel naturalWidth={gen.naturalWidth} naturalHeight={gen.naturalHeight} />
-        </div>
+        <NodeInfoBar
+          nodeId={id}
+          label={gen.label}
+          icon={Clapperboard}
+          accent={GEN_ACCENT}
+          zoom={zoom}
+          naturalWidth={gen.naturalWidth}
+          naturalHeight={gen.naturalHeight}
+        />
       )}
 
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
@@ -194,6 +205,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>
+
+          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
         </motion.div>
 
         {showMenu && (
@@ -203,7 +216,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
               <PromptEditor
                 value={gen.prompt}
-                badges={badges}
+                texts={texts}
+                refs={refs}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
               />

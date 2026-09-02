@@ -4,6 +4,7 @@ import {
   GPT_QUALITIES,
   GPT_SIZE_PRESETS,
   gptSizeOf,
+  IMAGE_GEN_NODE_TYPE,
   IMAGE_GEN_NODE_WIDTH,
   IMAGE_MODELS,
   type ImageGenNodeData,
@@ -36,13 +37,14 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { downloadItemOf } from "@/lib/download";
 import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
-import { nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
-import { NodeName } from "./node-name";
-import { NodeSizeLabel, sizePatchOf } from "./node-size";
+import { NodeActionPanel } from "./node-action-panel";
+import { NodeInfoBar } from "./node-info-bar";
+import { sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
@@ -55,16 +57,6 @@ function currentAspect(gen: ImageGenNodeData): number {
   return w / h;
 }
 
-/**
- * 从上游节点里取出能作为参考图的 URL：图片媒体节点的 url，或另一个
- * 图像生成节点的结果图 —— 生成结果可以链式引用。图像模型只吃图，
- * 所以在共用的 nodeMediaOf 之上再按种类筛一道。
- */
-export function referenceUrlOf(node: { id: string; type?: string; data: unknown }): string | null {
-  const media = nodeMediaOf(node);
-  return media?.kind === "image" ? media.url : null;
-}
-
 export function ImageGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as ImageGenNodeData;
   const { updateNodeData } = useReactFlow();
@@ -73,21 +65,25 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
   const { activeNodeId, dropTargetId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
+  // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
+  const actionItem = showMenu ? downloadItemOf({ id, type: IMAGE_GEN_NODE_TYPE, data }) : null;
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
 
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
-  const { badges, resolvedPrompt } = usePromptTokens(id, gen.prompt, sources);
+  // 图像模型只吃图，视频 / 音频的上限给 0（连线约束本来也不让它们连进来）
+  const { texts, refs, resolvedPrompt, urls } = usePromptTokens(id, gen.prompt, sources, {
+    image: MAX_REFERENCE_IMAGES,
+    video: 0,
+    audio: 0,
+  });
   // id 是源节点 id：同一张图可以连入多次，chips 的 React key 必须用它而不是 url
-  const referenceItems = sources
-    .map((node) => {
-      const url = node ? referenceUrlOf(node) : null;
-      return node && url ? { id: node.id, url } : null;
-    })
-    .filter((item): item is { id: string; url: string } => item !== null);
-  const referenceUrls = referenceItems.map((item) => item.url);
+  const referenceItems = refs.filter(
+    (item): item is { id: string; kind: "image"; label: string; url: string } =>
+      item.kind === "image" && Boolean(item.url),
+  );
 
   const generating = gen.status === "generating";
 
@@ -110,7 +106,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
         json: {
           model: gen.model,
           prompt: resolvedPrompt,
-          imageList: referenceUrls.slice(0, MAX_REFERENCE_IMAGES),
+          // prompt 里 @ 引用的占位符序号对应这个列表的下标，两者出自同一个 hook
+          imageList: urls.image,
           quality: gen.quality,
           sizePreset: gen.sizePreset,
           aspectRatio: gen.aspectRatio,
@@ -137,16 +134,15 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   return (
     <>
       {selected && (
-        <div
-          className="-top-6 pointer-events-none absolute inset-x-0 flex items-center justify-between gap-4 text-xs"
-          style={{ color: GEN_ACCENT }}
-        >
-          <span className="flex min-w-0 items-center gap-1">
-            <WandSparkles className="size-3.5 shrink-0" />
-            <NodeName nodeId={id} label={gen.label} />
-          </span>
-          <NodeSizeLabel naturalWidth={gen.naturalWidth} naturalHeight={gen.naturalHeight} />
-        </div>
+        <NodeInfoBar
+          nodeId={id}
+          label={gen.label}
+          icon={WandSparkles}
+          accent={GEN_ACCENT}
+          zoom={zoom}
+          naturalWidth={gen.naturalWidth}
+          naturalHeight={gen.naturalHeight}
+        />
       )}
 
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
@@ -198,6 +194,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>
+
+          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
         </motion.div>
 
         {/*
@@ -212,7 +210,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
 
               <PromptEditor
                 value={gen.prompt}
-                badges={badges}
+                texts={texts}
+                refs={refs}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
               />

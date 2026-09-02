@@ -1,14 +1,29 @@
 "use client";
 
-import { AUDIO_NODE_SIZE, fitMediaSize, type MediaNodeData } from "@aigc-flow/shared";
-import { Handle, type NodeProps, NodeResizer, Position, useReactFlow } from "@xyflow/react";
+import {
+  AUDIO_NODE_SIZE,
+  fitMediaSize,
+  MEDIA_NODE_TYPE,
+  type MediaNodeData,
+} from "@aigc-flow/shared";
+import {
+  Handle,
+  type NodeProps,
+  NodeResizer,
+  Position,
+  useReactFlow,
+  useStore,
+} from "@xyflow/react";
 import { CircleAlert, FileImage, FileVideo, Loader2, Music, Plus } from "lucide-react";
 import { type CSSProperties, type SyntheticEvent, useEffect, useState } from "react";
+import { useCanvasActions } from "@/hooks/use-canvas-actions";
+import { downloadItemOf } from "@/lib/download";
 import { CANVAS_WIDTH, resizedImageUrl } from "@/lib/media-url";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
-import { NodeName } from "./node-name";
-import { NodeSizeLabel, sizePatchOf } from "./node-size";
+import { NodeActionPanel } from "./node-action-panel";
+import { NodeInfoBar } from "./node-info-bar";
+import { sizePatchOf } from "./node-size";
 
 const KIND_ICON = { image: FileImage, video: FileVideo, audio: Music } as const;
 
@@ -48,6 +63,13 @@ export function MediaNode({ id, data, selected }: NodeProps) {
   const Icon = KIND_ICON[media.kind];
   const { updateNode, updateNodeData } = useReactFlow();
   const freeResize = useShiftKey(Boolean(selected));
+  // 信息条和右侧面板要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放。
+  // 没选中时没有这两样东西，返回常量免得每个媒体节点都跟着缩放重渲
+  const zoom = useStore((state) => (selected ? state.transform[2] : 1));
+  // 右侧功能面板只在「单击选中」时出现（框选不出），和生成节点的菜单同一判据
+  const { activeNodeId } = useCanvasActions();
+  const actionItem =
+    selected && activeNodeId === id ? downloadItemOf({ id, type: MEDIA_NODE_TYPE, data }) : null;
 
   const isAudio = media.kind === "audio";
   const isPlaceholder = media.status !== "ready" || !media.url;
@@ -91,7 +113,17 @@ export function MediaNode({ id, data, selected }: NodeProps) {
         keepAspectRatio={!isAudio && !isPlaceholder && !freeResize}
       />
 
-      {selected && <InfoBar nodeId={id} media={media} icon={Icon} />}
+      {selected && (
+        <NodeInfoBar
+          nodeId={id}
+          label={media.label}
+          icon={Icon}
+          accent={ACCENT}
+          zoom={zoom}
+          naturalWidth={media.naturalWidth}
+          naturalHeight={media.naturalHeight}
+        />
+      )}
 
       <div
         className={cn(
@@ -122,35 +154,9 @@ export function MediaNode({ id, data, selected }: NodeProps) {
         {/* 图标不能吃指针事件，否则从正中间按下去拖不出连线 */}
         <Plus className="pointer-events-none size-3" />
       </Handle>
-    </>
-  );
-}
 
-/**
- * 选中时浮在节点上方外侧：左边图标 + 名称，右边原始像素尺寸。
- * 名称双击可改。整条是 pointer-events-none（不挡住底下的画布），
- * 只有名称那一小块单独放行。
- */
-function InfoBar({
-  nodeId,
-  media,
-  icon: Icon,
-}: {
-  nodeId: string;
-  media: MediaNodeData;
-  icon: (typeof KIND_ICON)[keyof typeof KIND_ICON];
-}) {
-  return (
-    <div
-      className="-top-6 pointer-events-none absolute inset-x-0 flex items-center justify-between gap-4 text-xs"
-      style={{ color: ACCENT }}
-    >
-      <span className="flex min-w-0 items-center gap-1">
-        <Icon className="size-3.5 shrink-0" />
-        <NodeName nodeId={nodeId} label={media.label} />
-      </span>
-      <NodeSizeLabel naturalWidth={media.naturalWidth} naturalHeight={media.naturalHeight} />
-    </div>
+      {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
+    </>
   );
 }
 

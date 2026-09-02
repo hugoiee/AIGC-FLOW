@@ -1,13 +1,20 @@
 "use client";
 
 import type { TextNodeData } from "@aigc-flow/shared";
-import { Handle, type NodeProps, NodeResizer, Position, useReactFlow } from "@xyflow/react";
+import {
+  Handle,
+  type NodeProps,
+  NodeResizer,
+  Position,
+  useReactFlow,
+  useStore,
+} from "@xyflow/react";
 import { Plus, Type } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT, GEN_HANDLE_BASE } from "./gen-node-controls";
-import { NodeName } from "./node-name";
+import { NodeInfoBar } from "./node-info-bar";
 
 /** 缩放手柄样式，对齐媒体节点 */
 const RESIZE_HANDLE_STYLE = {
@@ -26,6 +33,8 @@ export function TextNode({ id, data, selected }: NodeProps) {
   const text = data as unknown as TextNodeData;
   const { updateNodeData } = useReactFlow();
   const [editing, setEditing] = useState(false);
+  // 信息条要在屏幕上保持固定大小；没选中时没有信息条，返回常量免得跟着缩放重渲
+  const zoom = useStore((state) => (selected ? state.transform[2] : 1));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   /**
@@ -63,15 +72,7 @@ export function TextNode({ id, data, selected }: NodeProps) {
       />
 
       {selected && (
-        <div
-          className="-top-6 pointer-events-none absolute inset-x-0 flex items-center text-xs"
-          style={{ color: GEN_ACCENT }}
-        >
-          <span className="flex min-w-0 items-center gap-1">
-            <Type className="size-3.5 shrink-0" />
-            <NodeName nodeId={id} label={text.label} />
-          </span>
-        </div>
+        <NodeInfoBar nodeId={id} label={text.label} icon={Type} accent={GEN_ACCENT} zoom={zoom} />
       )}
 
       {/* biome-ignore lint/a11y/noStaticElementInteractions: 双击进编辑是画布节点的交互习惯，键盘用户可经节点选中后直接输入 */}
