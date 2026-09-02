@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# database (SQLite 单文件 + WAL)
+*.db
+*.sqlite
+*.db-shm
+*.db-wal
+apps/server/data/
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# 需求文档
+/docs

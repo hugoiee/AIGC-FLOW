@@ -1,0 +1,14 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# 需要执行安装脚本（原生编译 / 二进制下载）的依赖
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  "@biomejs/biome": true
+  sharp: true
+
+minimumReleaseAgeExclude:
+  - tsx@4.23.13
+  - zod@4.5.4
