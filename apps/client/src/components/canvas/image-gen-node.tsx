@@ -41,6 +41,7 @@ import { downloadItemOf } from "@/lib/download";
 import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { nodeMarkOf } from "@/lib/node-mark";
 import { cn } from "@/lib/utils";
+import { GenMenuDialog } from "./gen-menu-dialog";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { ModelIcon } from "./model-icon";
 import { NodeActionPanel } from "./node-action-panel";
@@ -94,6 +95,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   );
 
   const generating = gen.status === "generating";
+  // 提示词多到出滚动条时可以把整个浮动菜单放大成弹层专心改
+  const [expanded, setExpanded] = useState(false);
 
   /**
    * 点生成：状态机 idle/ready/error → generating → ready | error。
@@ -228,38 +231,54 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
         {showMenu && (
           <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
-              <ReferenceChips items={referenceItems} />
-
-              <PromptEditor
-                value={gen.prompt}
-                texts={texts}
-                refs={refs}
-                onChange={(value) => updateNodeData(id, { prompt: value })}
-                placeholder="今天我们要创作什么？"
-                title={gen.label}
-              />
-
-              <div className="flex items-center justify-between gap-2">
-                <SizeSetting nodeId={id} gen={gen} />
-                <div className="flex items-center gap-2">
-                  <ModelSelect nodeId={id} gen={gen} />
-                  <Button
-                    size="sm"
-                    className="nodrag rounded-full px-5"
-                    disabled={generating || !resolvedPrompt}
-                    onClick={handleGenerate}
-                  >
-                    {generating && <Loader2 className="animate-spin" />}
-                    {generating ? "生成中" : "生成"}
-                  </Button>
-                </div>
-              </div>
+              {renderMenu(false)}
             </div>
           </div>
         )}
       </div>
+
+      {/* 放大后的弹层：同一套菜单的大号形态，portal 到 body，不受画布缩放影响 */}
+      <GenMenuDialog open={expanded} onOpenChange={setExpanded} title={gen.label}>
+        {renderMenu(true)}
+      </GenMenuDialog>
     </>
   );
+
+  /** 浮动菜单的内容：参考图 → 提示词 → 底部选项 + 生成。节点里和放大弹层里各渲染一份 */
+  function renderMenu(large: boolean) {
+    return (
+      <>
+        <ReferenceChips items={referenceItems} />
+
+        <PromptEditor
+          value={gen.prompt}
+          texts={texts}
+          refs={refs}
+          onChange={(value) => updateNodeData(id, { prompt: value })}
+          placeholder="今天我们要创作什么？"
+          onExpand={large ? undefined : () => setExpanded(true)}
+          large={large}
+          autoFocus={large}
+        />
+
+        <div className="flex items-center justify-between gap-2">
+          <SizeSetting nodeId={id} gen={gen} />
+          <div className="flex items-center gap-2">
+            <ModelSelect nodeId={id} gen={gen} />
+            <Button
+              size="sm"
+              className="nodrag rounded-full px-5"
+              disabled={generating || !resolvedPrompt}
+              onClick={handleGenerate}
+            >
+              {generating && <Loader2 className="animate-spin" />}
+              {generating ? "生成中" : "生成"}
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+  }
 }
 
 /**

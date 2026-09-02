@@ -33,13 +33,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { PREVIEW_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { nodeMarkOf } from "@/lib/node-mark";
 import { nodeMediaOf } from "@/lib/node-media";
@@ -355,13 +348,11 @@ type PromptEditorProps = {
   refs: PromptMediaRef[];
   onChange: (value: string) => void;
   placeholder: string;
-  /** 放大编辑弹层的标题里带上节点名，同时开着几个生成节点时知道在改哪个 */
-  title?: string;
   /**
-   * 内容多到出滚动条时露出「放大编辑」按钮，点开一个盖住整个画面的弹层专心改。
-   * 弹层里的那份编辑器自己不能再放大（false），否则套娃。
+   * 给了这个回调，内容多到出滚动条时就露出「放大」按钮，点了由节点把整个浮动菜单
+   * 放大成弹层（见 gen-menu-dialog.tsx）。弹层里的那份编辑器不传，免得套娃。
    */
-  expandable?: boolean;
+  onExpand?: () => void;
   /** 弹层里的大号形态：更高、字号更大 */
   large?: boolean;
   /** 挂载后聚焦并把光标放到末尾，弹层打开时用 */
@@ -381,8 +372,7 @@ export function PromptEditor({
   refs,
   onChange,
   placeholder,
-  title,
-  expandable = true,
+  onExpand,
   large = false,
   autoFocus = false,
 }: PromptEditorProps) {
@@ -399,7 +389,6 @@ export function PromptEditor({
     id: string;
     rect: DOMRect;
   } | null>(null);
-  const [expanded, setExpanded] = useState(false);
   // 内容是否已经多到出滚动条：只有这时才露出放大按钮，短提示词不需要它
   const [overflowing, setOverflowing] = useState(false);
 
@@ -432,13 +421,13 @@ export function PromptEditor({
   // biome-ignore lint/correctness/useExhaustiveDependencies: value 变了要重新量 scrollHeight
   useEffect(() => {
     const el = ref.current;
-    if (!el || !expandable) return;
+    if (!el || !onExpand) return;
     const measure = () => setOverflowing(el.scrollHeight > el.clientHeight + 1);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [expandable, value]);
+  }, [onExpand, value]);
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -611,12 +600,12 @@ export function PromptEditor({
         className={cn(
           "nodrag nowheel overflow-y-auto whitespace-pre-wrap break-words outline-none",
           large
-            ? "max-h-[70vh] min-h-[50vh] text-base leading-relaxed"
+            ? "max-h-[50vh] min-h-[36vh] text-base leading-relaxed"
             : "max-h-[140px] min-h-16 text-sm",
         )}
       />
 
-      {expandable && overflowing && (
+      {onExpand && overflowing && (
         // 贴在输入框右下角、滚动条内侧；mousedown 拦掉免得点它时编辑器失焦收起 @ 菜单
         <Button
           variant="ghost"
@@ -624,45 +613,11 @@ export function PromptEditor({
           aria-label="放大编辑"
           title="放大编辑"
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => setExpanded(true)}
+          onClick={onExpand}
           className="nodrag absolute right-3 bottom-1 bg-card/80 text-muted-foreground backdrop-blur-sm"
         >
           <Maximize2 />
         </Button>
-      )}
-
-      {expandable && (
-        <Dialog open={expanded} onOpenChange={setExpanded}>
-          <DialogContent
-            className="sm:max-w-3xl"
-            // 自己把光标放到末尾（见 autoFocus），不让 Dialog 抢焦点
-            onOpenAutoFocus={(event) => event.preventDefault()}
-            // @ 菜单 portal 在弹层外面，点它不算「点到外面」
-            onInteractOutside={(event) => {
-              const target = event.detail.originalEvent.target as Element | null;
-              if (target?.closest('[role="listbox"]')) event.preventDefault();
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>{title ? `${title} · 提示词` : "提示词"}</DialogTitle>
-              <DialogDescription>
-                和节点里是同一份内容，改完关掉即可；输入 @ 仍可引用已连入的素材。
-              </DialogDescription>
-            </DialogHeader>
-            <div className="rounded-lg border bg-card p-3">
-              <PromptEditor
-                value={value}
-                texts={texts}
-                refs={refs}
-                onChange={onChange}
-                placeholder={placeholder}
-                expandable={false}
-                large
-                autoFocus
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
       )}
 
       {mention &&

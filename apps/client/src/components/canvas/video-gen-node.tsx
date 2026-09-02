@@ -56,6 +56,7 @@ import { nodeMarkOf } from "@/lib/node-mark";
 import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
+import { GenMenuDialog } from "./gen-menu-dialog";
 import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
@@ -114,6 +115,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const audioRefs = media.filter((item) => item.kind === "audio").slice(0, MAX_AUDIO_REFS);
 
   const generating = gen.status === "generating";
+  // 提示词多到出滚动条时可以把整个浮动菜单放大成弹层专心改
+  const [expanded, setExpanded] = useState(false);
 
   /** 点生成：同图像节点的状态机。内网接口同步阻塞，视频可能要等几分钟 */
   async function handleGenerate() {
@@ -236,41 +239,57 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
         {showMenu && (
           <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
-              <ReferenceChips refs={[...imageRefs, ...videoRefs, ...audioRefs]} frames={isFrames} />
-
-              <PromptEditor
-                value={gen.prompt}
-                texts={texts}
-                refs={refs}
-                onChange={(value) => updateNodeData(id, { prompt: value })}
-                placeholder="今天我们要创作什么？"
-                title={gen.label}
-              />
-
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <ModeSelect nodeId={id} gen={gen} />
-                  <VideoSetting nodeId={id} gen={gen} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <VersionSelect nodeId={id} gen={gen} />
-                  <Button
-                    size="sm"
-                    className="nodrag rounded-full px-5"
-                    disabled={generating || !resolvedPrompt}
-                    onClick={handleGenerate}
-                  >
-                    {generating && <Loader2 className="animate-spin" />}
-                    {generating ? "生成中" : "生成"}
-                  </Button>
-                </div>
-              </div>
+              {renderMenu(false)}
             </div>
           </div>
         )}
       </div>
+
+      {/* 放大后的弹层：同一套菜单的大号形态，portal 到 body，不受画布缩放影响 */}
+      <GenMenuDialog open={expanded} onOpenChange={setExpanded} title={gen.label}>
+        {renderMenu(true)}
+      </GenMenuDialog>
     </>
   );
+
+  /** 浮动菜单的内容：参考素材 → 提示词 → 底部选项 + 生成。节点里和放大弹层里各渲染一份 */
+  function renderMenu(large: boolean) {
+    return (
+      <>
+        <ReferenceChips refs={[...imageRefs, ...videoRefs, ...audioRefs]} frames={isFrames} />
+
+        <PromptEditor
+          value={gen.prompt}
+          texts={texts}
+          refs={refs}
+          onChange={(value) => updateNodeData(id, { prompt: value })}
+          placeholder="今天我们要创作什么？"
+          onExpand={large ? undefined : () => setExpanded(true)}
+          large={large}
+          autoFocus={large}
+        />
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ModeSelect nodeId={id} gen={gen} />
+            <VideoSetting nodeId={id} gen={gen} />
+          </div>
+          <div className="flex items-center gap-2">
+            <VersionSelect nodeId={id} gen={gen} />
+            <Button
+              size="sm"
+              className="nodrag rounded-full px-5"
+              disabled={generating || !resolvedPrompt}
+              onClick={handleGenerate}
+            >
+              {generating && <Loader2 className="animate-spin" />}
+              {generating ? "生成中" : "生成"}
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+  }
 }
 
 /** 上方结果区：占位（播放键，对齐设计稿视频占位符）→ 生成中 → 结果视频 / 失败 */
