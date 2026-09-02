@@ -39,3 +39,22 @@ export function NodeMarkBadge({ mark, zoom }: { mark: NodeMark; zoom: number }) 
 
 /** 废弃的素材整块压暗去色。放在素材区自己的容器上，别连选中框和角标一起压 */
 export const REJECTED_MEDIA_CLASS = "opacity-40 grayscale";
+
+/** 生成节点菜单里参考素材缩略格的压暗，比节点上的轻一点：格子本来就小，太淡看不清 */
+export const REJECTED_CHIP_CLASS = "opacity-50 grayscale";
+
+/**
+ * 参考素材缩略格左上角的小叉：上游被标成废弃时，缩略格和 prompt 里的 @ 徽章一样要提示，
+ * 否则一排参考图里看不出哪张是废片。格子只有 56px 宽，角标缩到 16px。
+ * 挂在 relative 的格子里，格子自己套 REJECTED_CHIP_CLASS。
+ */
+export function ChipRejectedMark() {
+  return (
+    <span
+      title="这份素材已标记为废弃"
+      className="absolute top-1 left-1 z-10 flex size-4 items-center justify-center rounded-full bg-muted-foreground text-background shadow-sm"
+    >
+      <X className="size-2.5" strokeWidth={3} />
+    </span>
+  );
+}

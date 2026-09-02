@@ -45,7 +45,12 @@ import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node
 import { ModelIcon } from "./model-icon";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
-import { NodeMarkBadge, REJECTED_MEDIA_CLASS } from "./node-mark-badge";
+import {
+  ChipRejectedMark,
+  NodeMarkBadge,
+  REJECTED_CHIP_CLASS,
+  REJECTED_MEDIA_CLASS,
+} from "./node-mark-badge";
 import { sizePatchOf } from "./node-size";
 import { PromptEditor, type PromptMediaRef, usePromptTokens } from "./prompt-editor";
 
@@ -342,14 +347,21 @@ function ResultArea({
   );
 }
 
-/** 参考图横排：已连接的缩略图（上限 16），未满时只补一个占位示例格 */
-function ReferenceChips({ items }: { items: Array<{ id: string; url: string }> }) {
+/** 参考图横排：已连接的缩略图（上限 16），未满时只补一个占位示例格。废弃的上游灰显 + 小叉 */
+function ReferenceChips({
+  items,
+}: {
+  items: Array<{ id: string; url: string; rejected: boolean }>;
+}) {
   const shown = items.slice(0, MAX_REFERENCE_IMAGES);
 
   return (
     <div className="nodrag nowheel flex gap-2 overflow-x-auto pb-1">
-      {shown.map(({ id, url }) => (
-        <div key={id} className="h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border">
+      {shown.map(({ id, url, rejected }) => (
+        <div
+          key={id}
+          className="relative h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border"
+        >
           {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
           <img
             src={resizedImageUrl(url, THUMB_WIDTH)}
@@ -357,8 +369,9 @@ function ReferenceChips({ items }: { items: Array<{ id: string; url: string }> }
             draggable={false}
             loading="lazy"
             decoding="async"
-            className="size-full object-cover"
+            className={cn("size-full object-cover", rejected && REJECTED_CHIP_CLASS)}
           />
+          {rejected && <ChipRejectedMark />}
         </div>
       ))}
       {shown.length < MAX_REFERENCE_IMAGES && (

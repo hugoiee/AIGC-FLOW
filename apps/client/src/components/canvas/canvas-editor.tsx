@@ -58,7 +58,7 @@ import {
   type SpacingMode,
   spaceNodes,
 } from "@/lib/layout";
-import { markableIds, markNodes } from "@/lib/node-mark";
+import { idsByMark, markableIds, markNodes, markSummary } from "@/lib/node-mark";
 import { AnimatedEdge } from "./animated-edge";
 import { CanvasControls } from "./canvas-controls";
 import { CanvasActionGroup, CanvasInfoGroup } from "./canvas-toolbar";
@@ -480,6 +480,28 @@ export function CanvasEditor({
     [nodes, mediaTargetIds],
   );
 
+  const marks = useMemo(() => markSummary(nodes), [nodes]);
+
+  /**
+   * 左上角计数芯片：选中某一态的全部素材。只改 selected，不进历史
+   * （选中态本来就不落盘，见 toPersistedGraph）。顺手清掉 activeNodeId，
+   * 否则上一次单击展开的菜单会挂在一堆被批量选中的节点里。
+   */
+  const handleSelectByMark = useCallback(
+    (mark: NodeMark | null) => {
+      const ids = new Set(idsByMark(nodesRef.current, mark));
+      setNodes(
+        nodesRef.current.map((node) =>
+          Boolean(node.selected) === ids.has(node.id)
+            ? node
+            : { ...node, selected: ids.has(node.id) },
+        ),
+      );
+      setActiveNodeId(null);
+    },
+    [setNodes],
+  );
+
   const handleMark = useCallback(
     (mark: NodeMark | null) => applyLayout((current) => markNodes(current, mediaTargetIds, mark)),
     [applyLayout, mediaTargetIds],
@@ -750,6 +772,8 @@ export function CanvasEditor({
                 edgeCount={edges.length}
                 saveStatus={status}
                 onRename={onRename}
+                marks={marks}
+                onSelectByMark={handleSelectByMark}
               />
             </Panel>
 

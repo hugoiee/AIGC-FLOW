@@ -34,3 +34,23 @@ export function markNodes(nodes: Node[], ids: string[], mark: NodeMark | null): 
   });
   return changed ? next : nodes;
 }
+
+/** 三态各有多少：keep / reject 是打过标的，unmarked 是有素材但还没审的 */
+export type MarkSummary = { keep: number; reject: number; unmarked: number };
+
+/** 只数身上有素材的节点，和 markableIds 同一判据 */
+export function markSummary(nodes: Node[]): MarkSummary {
+  const summary: MarkSummary = { keep: 0, reject: 0, unmarked: 0 };
+  for (const node of nodes) {
+    if (nodeMediaOf(node) === null) continue;
+    summary[nodeMarkOf(node) ?? "unmarked"] += 1;
+  }
+  return summary;
+}
+
+/** 某一态的全部素材节点 id（null 是待审）。左上角计数芯片点击选中用 */
+export function idsByMark(nodes: Node[], mark: NodeMark | null): string[] {
+  return nodes
+    .filter((node) => nodeMediaOf(node) !== null && nodeMarkOf(node) === mark)
+    .map((node) => node.id);
+}
