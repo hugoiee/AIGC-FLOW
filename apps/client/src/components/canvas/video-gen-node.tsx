@@ -244,6 +244,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
                 refs={refs}
                 onChange={(value) => updateNodeData(id, { prompt: value })}
                 placeholder="今天我们要创作什么？"
+                title={gen.label}
               />
 
               <div className="flex items-center justify-between gap-2">
