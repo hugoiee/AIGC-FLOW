@@ -228,10 +228,18 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
 
           {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
+          {/* 两头都是选中才露出；target 在被拉线悬停时也露出来当落点提示，
+              不选中时连线照样能落在节点身上。藏法同图像生成节点（opacity，不能不渲染） */}
           <Handle
             type="target"
             position={Position.Left}
-            style={{ ...GEN_HANDLE_BASE, left: -10, ...handleScaleStyle(zoom, Position.Left) }}
+            style={{
+              ...GEN_HANDLE_BASE,
+              left: -10,
+              ...handleScaleStyle(zoom, Position.Left),
+              opacity: selected || isDropTarget ? 1 : 0,
+              pointerEvents: selected || isDropTarget ? "auto" : "none",
+            }}
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>

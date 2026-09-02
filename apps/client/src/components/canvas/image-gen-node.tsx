@@ -203,12 +203,20 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
 
           {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
 
-          {/* 左入右出。target 常显：从别的节点拖连线过来时本节点未被选中，
-              端点藏起来就没地方落线了。source 与媒体节点同款，选中才露出 */}
+          {/* 左入右出，两头都是选中才露出（和媒体节点同款）。target 另外在被拉线悬停时
+              也露出来当落点提示；不选中时连线照样能落在节点身上，不靠这个端点接线。
+              藏起来用 opacity + pointerEvents 而不是不渲染：不渲染的话它上面已有的连线
+              会被 React Flow 判成悬空直接丢掉 */}
           <Handle
             type="target"
             position={Position.Left}
-            style={{ ...GEN_HANDLE_BASE, left: -10, ...handleScaleStyle(zoom, Position.Left) }}
+            style={{
+              ...GEN_HANDLE_BASE,
+              left: -10,
+              ...handleScaleStyle(zoom, Position.Left),
+              opacity: selected || isDropTarget ? 1 : 0,
+              pointerEvents: selected || isDropTarget ? "auto" : "none",
+            }}
           >
             <Plus className="pointer-events-none size-3" />
           </Handle>
