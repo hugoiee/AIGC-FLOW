@@ -219,7 +219,10 @@ export type AppType = typeof app;
   上游生成节点也跟着动」：节点越多结果图排队加载越久，撞上的窗口就越大；素材 / 文本 /
   编组有 `node.width/height` 撑着，天然没这问题。所以结果区在加载完成前必须自己用
   `aspectRatio` 把高度占住（`node-size.tsx` 的 `reservedAspect`，优先用上次量到的
-  原始尺寸，没有就用当前选的宽高比），新加的产出型节点照做。
+  原始尺寸，没有就用当前选的宽高比 —— 视频的「自适应」按 16:9 算，生成的绝大多数是 16:9），
+  新加的产出型节点照做。视频结果区同理：`<video>` 在 metadata 回来之前是固有的
+  300×150（不为 0，不会触发框选那个问题），但高度和真实比例差着老远，
+  不占位的话 metadata 一到画面就跳一下。
 - 判断文件类型用 `mediaKindOf(mimeType, filename)`，**不要只看 MIME**：
   部分容器格式（.mp4 / .mkv / .m4a）浏览器会给 `application/octet-stream` 甚至空串。
 - **编组的子节点 position 是相对父节点的**，编组时减去组原点、解组时加回来，
