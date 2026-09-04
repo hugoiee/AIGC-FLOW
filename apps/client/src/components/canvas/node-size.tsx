@@ -38,3 +38,21 @@ export function sizePatchOf(
 
   return { naturalWidth: width, naturalHeight: height };
 }
+
+/**
+ * 结果还没解出来时先占住的宽高比：优先用上次量到的原始尺寸，没有就用调用方给的
+ * 默认比例（节点当前选的宽高比）。
+ *
+ * **这不是为了好看，是节点不能塌成 0 高。** 生成节点没有固定尺寸，高度由内容撑出来，
+ * 而 `<img class="w-full">` 在图解出来之前是 0 高 —— 节点整块量出来就是 534×0。
+ * React Flow 的框选判据（system 的 `getNodesInside`）是「重叠面积 ≥ 节点面积」，
+ * 面积为 0 时 `0 >= 0` 恒成立，另外没量到尺寸的节点还会被当成「尚未初始化」直接放行，
+ * 于是画布上**任何一个框选都会把这些节点选中**，跟着选区一起被拖走 ——
+ * 表现就是「框选几个节点，隔着老远的上游生成节点也跟着动」。节点一多、结果图排队
+ * 加载的时间更长，撞上的概率就更高。所以结果区在加载完成前必须自己把高度占住。
+ */
+export function reservedAspect(size: NodeSize, fallback: number): number {
+  const { naturalWidth, naturalHeight } = size;
+  if (naturalWidth && naturalHeight) return naturalWidth / naturalHeight;
+  return fallback;
+}

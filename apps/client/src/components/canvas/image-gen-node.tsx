@@ -58,7 +58,7 @@ import {
   REJECTED_CHIP_CLASS,
   REJECTED_MEDIA_CLASS,
 } from "./node-mark-badge";
-import { sizePatchOf } from "./node-size";
+import { reservedAspect, sizePatchOf } from "./node-size";
 import { PromptEditor, type PromptMediaRef, usePromptTokens } from "./prompt-editor";
 
 /** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
@@ -318,8 +318,13 @@ function ResultArea({
 }) {
   // 结果图地址失效（内网结果有有效期）时兜底成占位符，避免破图 + 大段 alt 文字
   const [loadFailed, setLoadFailed] = useState(false);
+  // 结果图有没有解出来。没解出来之前必须自己把高度占住，见 reservedAspect
+  const [loaded, setLoaded] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
-  useEffect(() => setLoadFailed(false), [gen.resultUrl]);
+  useEffect(() => {
+    setLoadFailed(false);
+    setLoaded(false);
+  }, [gen.resultUrl]);
 
   if (gen.status === "ready" && gen.resultUrl && !loadFailed) {
     const src = resizedImageUrl(gen.resultUrl, CANVAS_WIDTH);
@@ -336,10 +341,14 @@ function ResultArea({
         draggable={false}
         loading="lazy"
         decoding="async"
-        onLoad={(event) =>
-          exact &&
-          onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
-        }
+        // 图还没解出来时先按比例把高度占住，解出来之后交回给图片自身的比例
+        style={loaded ? undefined : { aspectRatio: reservedAspect(gen, aspect) }}
+        onLoad={(event) => {
+          setLoaded(true);
+          if (exact) {
+            onNaturalSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+          }
+        }}
         onError={() => setLoadFailed(true)}
         // 画布上渲染的是缩略版，双击才在新标签页看全尺寸原图
         onDoubleClick={() => gen.resultUrl && window.open(gen.resultUrl, "_blank")}
