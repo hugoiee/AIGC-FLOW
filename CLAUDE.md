@@ -2,7 +2,7 @@
 
 画布节点工作流，用于调用各种模型进行影视资产创作。
 
-当前进度：首页（项目列表）、画布编辑器（`/projects/[id]`，React Flow）、
+当前进度：首页（项目列表）、画布编辑器（`/projects?id=<n>`，React Flow）、
 媒体上传（拖拽或按钮，图/视频/音频，经服务端转发到内网上传服务，
 不落本地盘）已完成，`/debug` 是链路自检页。
 画布操作：选择/移动双模式（V / H 切换）、框选、多选工具条
@@ -107,6 +107,44 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
 
+## 桌面端（Electron）
+
+`apps/desktop` 把主进程 + 整个 Hono server 打成**单个 CJS 文件**，前端走 Next 的
+`output: 'export'`，由内嵌的 Hono 在 **`127.0.0.1:39501`** 上和 `/api/*` **同源托管**
+（`shell.ts`）。同源一次性消掉三件事：CORS、`NEXT_PUBLIC_API_URL` 的 build 期内联
+（置空后 hono client 直接走相对路径）、以及 `file://` 下 `assetPrefix` 那套 hack。
+出包：`pnpm dist:mac` / `pnpm dist:win` / `dist:all`，本机 mac 就能出 win 的 NSIS
+（electron-builder 自带 Wine），正式发版走 `.github/workflows/release.yml` 的双 runner。
+不做签名（mac 只做 arm64 必需的 ad-hoc）、不做公证、不做自动更新。
+
+几条只在这里成立、踩过就疼的约束：
+
+- **端口必须固定，不能用 `port: 0`**。localStorage 按 origin 隔离而 origin 含端口，
+  随机端口 = 每次启动画布剪贴板都清空，直接违背跨重启粘贴的契约。被占用时递增回退，
+  但必须弹框明说「剪贴板会从空的开始」——静默降级用户会以为剪贴板坏了。
+  弹框要用**异步**的 `showMessageBox`：`Sync` 版阻塞主进程线程，而 HTTP server 就跑在
+  这个线程上，弹窗没人点的这段时间所有请求都卡死。
+- **`main.ts` 里 server 相关的 import 必须是动态的**。`db/index.ts` 在模块加载时就
+  `new Database(resolve(process.cwd(), env.DATABASE_URL))`，静态 import 的求值先于宿主
+  模块任何语句，库会开在错误位置。也别改成「先 import 一个设置环境变量的副作用模块」——
+  biome 的 `organizeImports` 一次 `lint:fix` 就会按字母序调换两行，且只在打包后暴露。
+  （靠的是 `resolve()` 对绝对路径幂等，所以设个环境变量就能改库位置，server 代码零改动。）
+- **`app.setPath("userData", ...)` 必须在 app ready 之前同步调用**，否则 Chromium 已经按
+  旧路径初始化完缓存服务，一路报 `Failed to create directory: .../Shared Dictionary/cache`。
+- **electron-builder 的 `${platform}` 宏给的是构建主机的平台，不是目标平台**。拿它裁
+  better-sqlite3 的 prebuilds，在 mac 上打的 win 包里会装进 `darwin-x64.node`，
+  装到 Windows 上必崩，而且在 mac 上完全测不出来。裁剪只能放 `afterPack`
+  （`build/prune-prebuilds.cjs`，那里的 `electronPlatformName` 才是目标平台，
+  命名恰好和 better-sqlite3 的 darwin / win32 / linux 一致）。`${arch}` 没这个问题。
+- `better-sqlite3@13` 是 N-API + prebuildify，**不需要 electron-rebuild / node-gyp**
+  （`npmRebuild: false`），但它用 `__dirname` 拼 prebuilds 路径再 `require`，所以
+  **必须 external（tsup 里 `noExternal` 要用负向断言排除它，否则会被内联）+ 整包 asarUnpack**。
+- **未保存时的 `beforeunload` 在 Electron 下不弹框、只静默拒绝关闭**，表现是「有改动时
+  ⌘Q 完全没反应」。必须在主进程接管 `will-prevent-unload`，且注意那个事件上
+  `event.preventDefault()` 的语义是反的 —— 它表示「放行关闭」。
+- 退出时**先 `closeAllConnections()` 再 `close()`**（同 `apps/server/src/index.ts` 的教训），
+  再 `wal_checkpoint(TRUNCATE)` + `db.$client.close()`，否则 userData 里会留 `-wal`/`-shm`。
+
 ## 常用命令
 
 在仓库根目录执行（pnpm workspaces）：
@@ -116,11 +154,13 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 | `pnpm dev` | 同时启动 client(3000) 与 server(3001) |
 | `pnpm dev:client` / `pnpm dev:server` | 只启动其中一端 |
 | `pnpm build` | 全量构建（server 用 tsup，client 用 next build） |
-| `pnpm typecheck` | 三个包逐个 `tsc --noEmit` |
+| `pnpm typecheck` | 四个包逐个 `tsc --noEmit` |
 | `pnpm lint` / `pnpm lint:fix` | Biome 检查 / 自动修复 |
 | `pnpm db:generate` | 改完 `schema.ts` 后生成迁移 SQL |
 | `pnpm db:migrate` | 应用迁移到 SQLite 文件 |
 | `pnpm db:studio` | Drizzle Studio 可视化查库 |
+| `pnpm desktop` | 本机跑桌面端（不打包，用当前的 `apps/client/out`） |
+| `pnpm dist:mac` / `dist:win` | 出安装包到 `apps/desktop/release`（`dist:all` 两个都出） |
 
 ## 目录结构
 
@@ -141,6 +181,12 @@ apps/
     src/db/index.ts      SQLite 连接（WAL 模式）
     drizzle/             生成的迁移 SQL，不要手写
     data/                SQLite 单文件，已 gitignore
+  desktop/               Electron 壳（主进程 + 内嵌 server 打成单个 CJS）
+    src/main.ts          单实例锁 / userData / 迁移 / 起 server / 建窗口 / 关停
+    src/shell.ts         /api/* 转发 + Next 导出产物的静态托管（同源）
+    src/listen.ts        固定端口 39501，被占时探 health 再决定回退还是退出
+    build/               entitlements + afterPack 裁 prebuilds
+    release/             安装包产物，已 gitignore
 packages/
   shared/src/            前后端共用的 zod schema 与类型，直接导出 TS 源码
 ```
@@ -325,6 +371,7 @@ export type AppType = typeof app;
   节点。prompt 里的徽章 token 指向的是上游节点 id，上游没变所以原样有效。多选工具条的批量下载阈值
   （`SELECTION_TOOLBAR_MIN = 2`）不要动 —— 排布、编组那几个按钮对单个节点没意义。
 - 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
+- 桌面端的代码签名 / 公证 / 自动更新（现在全不做，未签名包首次打开要手动放行）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
   `{result:{content:[url],status:"success"}}`），把设置面板的生成地址指过去即可。
 
