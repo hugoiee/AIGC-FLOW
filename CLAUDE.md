@@ -2,11 +2,23 @@
 
 画布节点工作流，用于调用各种模型进行影视资产创作。
 
-当前进度：首页（项目列表）、画布编辑器（`/projects/[id]`，React Flow）、
+当前进度：首页（项目列表）、画布编辑器（`/projects?id=<n>`，React Flow）、
 媒体上传（拖拽或按钮，图/视频/音频，经服务端转发到内网上传服务，
 不落本地盘）已完成，`/debug` 是链路自检页。
 画布操作：选择/移动双模式（V / H 切换）、框选、多选工具条
 （整理节点 / 创建编组 / 对齐 / 间距 / 批量下载）、编组与解组、双击改节点名。
+**⌘C / ⌘V 的复制粘贴可以跨项目**：载荷（节点 + 两端都在选区内的连线）写在 localStorage
+单槽里（`lib/clipboard.ts`），所以切项目、切标签页、刷新之后都还粘得出来；素材不用重传 ——
+存的是绝对地址，换个项目照样能显示、能当参考图。载荷是**会跨版本存活的数据**，
+按契约对待：schema 在 `packages/shared/src/clipboard.ts`（复用图数据那两个 node/edge schema，
+带 `CLIPBOARD_VERSION`），读出来一律先过 zod，版本不符 / 脏数据一律当剪贴板是空的。
+剥离规则（未上传完的媒体、悬空连线、`generating` 回落 idle、瞬时状态）直接复用
+`toPersistedGraph`，还原复用 `fromPersistedGraph`，不另抄一份。
+落点：同项目沿用原坐标 + 40px、连续 ⌘V 逐次递增；跨项目落到**当前视口中心**并提示来源
+（目标画布的空白区域和来源坐标毫无关系，照搬原坐标会粘到屏幕外）。
+编组：选中编组等于选中它的全部成员；只选中组内部分成员时它们脱离编组、
+坐标从相对换算成绝对。**粘贴时所有 id 换新，`parentId` 和 prompt 里的徽章 token
+必须一起重映射** —— 漏了 parentId，同项目粘出来的成员会挂回原来那个组，跨项目直接报错。
 左下角的画布控制条是自己写的 `canvas-controls.tsx`（缩小 / 当前比例点开选档位 /
 放大 / 适应画布 / 锁定 / 缩略图），不用 React Flow 自带的 `<Controls>`，样式和顶部、
 底部的按钮组同一种胶囊风格但层级刻意更弱（底色更透、阴影更浅、图标次要色）。
@@ -95,6 +107,49 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 核心实体是 **project**，一个项目对应一张节点画布（扁平模型，没有中间层）。
 整张图存在 `projects.graph` 这一个 JSON 列里，读写都是整体覆盖。
 
+## 桌面端（Electron）
+
+`apps/desktop` 把主进程 + 整个 Hono server 打成**单个 CJS 文件**，前端走 Next 的
+`output: 'export'`，由内嵌的 Hono 在 **`127.0.0.1:39501`** 上和 `/api/*` **同源托管**
+（`shell.ts`）。同源一次性消掉三件事：CORS、`NEXT_PUBLIC_API_URL` 的 build 期内联
+（置空后 hono client 直接走相对路径）、以及 `file://` 下 `assetPrefix` 那套 hack。
+出包：`pnpm dist:mac` / `pnpm dist:win` / `dist:all`，本机 mac 就能出 win 的 NSIS
+（electron-builder 自带 Wine），正式发版走 `.github/workflows/release.yml` 的双 runner。
+不做签名（mac 只做 arm64 必需的 ad-hoc）、不做公证、不做自动更新。
+
+几条只在这里成立、踩过就疼的约束：
+
+- **端口必须固定，不能用 `port: 0`**。localStorage 按 origin 隔离而 origin 含端口，
+  随机端口 = 每次启动画布剪贴板都清空，直接违背跨重启粘贴的契约。被占用时递增回退，
+  但必须弹框明说「剪贴板会从空的开始」——静默降级用户会以为剪贴板坏了。
+  弹框要用**异步**的 `showMessageBox`：`Sync` 版阻塞主进程线程，而 HTTP server 就跑在
+  这个线程上，弹窗没人点的这段时间所有请求都卡死。
+- **`main.ts` 里 server 相关的 import 必须是动态的**。`db/index.ts` 在模块加载时就
+  `new Database(resolve(process.cwd(), env.DATABASE_URL))`，静态 import 的求值先于宿主
+  模块任何语句，库会开在错误位置。也别改成「先 import 一个设置环境变量的副作用模块」——
+  biome 的 `organizeImports` 一次 `lint:fix` 就会按字母序调换两行，且只在打包后暴露。
+  （靠的是 `resolve()` 对绝对路径幂等，所以设个环境变量就能改库位置，server 代码零改动。）
+- **`app.setPath("userData", ...)` 必须在 app ready 之前同步调用**，否则 Chromium 已经按
+  旧路径初始化完缓存服务，一路报 `Failed to create directory: .../Shared Dictionary/cache`。
+- **electron-builder 的 `${platform}` 宏给的是构建主机的平台，不是目标平台**。拿它裁
+  better-sqlite3 的 prebuilds，在 mac 上打的 win 包里会装进 `darwin-x64.node`，
+  装到 Windows 上必崩，而且在 mac 上完全测不出来。裁剪只能放 `afterPack`
+  （`build/prune-prebuilds.cjs`，那里的 `electronPlatformName` 才是目标平台，
+  命名恰好和 better-sqlite3 的 darwin / win32 / linux 一致）。`${arch}` 没这个问题。
+- `better-sqlite3@13` 是 N-API + prebuildify，**不需要 electron-rebuild / node-gyp**
+  （`npmRebuild: false`），但它用 `__dirname` 拼 prebuilds 路径再 `require`，所以
+  **必须 external（tsup 里 `noExternal` 要用负向断言排除它，否则会被内联）+ 整包 asarUnpack**。
+- **未保存时的 `beforeunload` 在 Electron 下不弹框、只静默拒绝关闭**，表现是「有改动时
+  ⌘Q 完全没反应」。必须在主进程接管 `will-prevent-unload`，且注意那个事件上
+  `event.preventDefault()` 的语义是反的 —— 它表示「放行关闭」。
+- **Electron 默认对每一个下载都弹一次「另存为」**，批量下载 4 个素材就是 4 个弹窗
+  （浏览器从来不是这个行为）。`downloads.ts` 接管 `will-download` 自动存进系统下载目录，
+  并按「名字 (1).png」避重 —— 存盘名取的是节点名，而节点名可以重复。代价是没有下载栏、
+  下完无声无息，所以一批下完补一条系统通知（Windows 上要先 `setAppUserModelId`，
+  不然通知不弹）。
+- 退出时**先 `closeAllConnections()` 再 `close()`**（同 `apps/server/src/index.ts` 的教训），
+  再 `wal_checkpoint(TRUNCATE)` + `db.$client.close()`，否则 userData 里会留 `-wal`/`-shm`。
+
 ## 常用命令
 
 在仓库根目录执行（pnpm workspaces）：
@@ -104,11 +159,13 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 | `pnpm dev` | 同时启动 client(3000) 与 server(3001) |
 | `pnpm dev:client` / `pnpm dev:server` | 只启动其中一端 |
 | `pnpm build` | 全量构建（server 用 tsup，client 用 next build） |
-| `pnpm typecheck` | 三个包逐个 `tsc --noEmit` |
+| `pnpm typecheck` | 四个包逐个 `tsc --noEmit` |
 | `pnpm lint` / `pnpm lint:fix` | Biome 检查 / 自动修复 |
 | `pnpm db:generate` | 改完 `schema.ts` 后生成迁移 SQL |
 | `pnpm db:migrate` | 应用迁移到 SQLite 文件 |
 | `pnpm db:studio` | Drizzle Studio 可视化查库 |
+| `pnpm desktop` | 本机跑桌面端（不打包，用当前的 `apps/client/out`） |
+| `pnpm dist:mac` / `dist:win` | 出安装包到 `apps/desktop/release`（`dist:all` 两个都出） |
 
 ## 目录结构
 
@@ -129,6 +186,12 @@ apps/
     src/db/index.ts      SQLite 连接（WAL 模式）
     drizzle/             生成的迁移 SQL，不要手写
     data/                SQLite 单文件，已 gitignore
+  desktop/               Electron 壳（主进程 + 内嵌 server 打成单个 CJS）
+    src/main.ts          单实例锁 / userData / 迁移 / 起 server / 建窗口 / 关停
+    src/shell.ts         /api/* 转发 + Next 导出产物的静态托管（同源）
+    src/listen.ts        固定端口 39501，被占时探 health 再决定回退还是退出
+    build/               entitlements + afterPack 裁 prebuilds
+    release/             安装包产物，已 gitignore
 packages/
   shared/src/            前后端共用的 zod schema 与类型，直接导出 TS 源码
 ```
@@ -199,6 +262,18 @@ export type AppType = typeof app;
   判据统一是「渲染用的 src === 原始 url」，三个节点共用 `node-size.tsx`。
   注意**落位和显示的数字是两回事**：落位只要比例，缩略版的比例和原图一致，
   所以浏览器解不动本地文件时节点仍能正确落位，只是不显示尺寸数字。
+- **节点的 DOM 高度不能塌成 0**：生成节点没有固定尺寸，高由内容撑出来，而
+  `<img class="w-full">` 在图解出来之前是 0 高，整个节点就量成 534×0。React Flow 的
+  框选判据（`getNodesInside`）是「重叠面积 ≥ 节点面积」，面积为 0 时 `0 >= 0` 恒成立，
+  而且没量到尺寸的节点还会被当成「尚未初始化」直接放行 —— 于是画布上**任何一次框选
+  都会把它们选中**，跟着选区一起被拖走。症状是「节点一多，框选几个节点，隔着老远的
+  上游生成节点也跟着动」：节点越多结果图排队加载越久，撞上的窗口就越大；素材 / 文本 /
+  编组有 `node.width/height` 撑着，天然没这问题。所以结果区在加载完成前必须自己用
+  `aspectRatio` 把高度占住（`node-size.tsx` 的 `reservedAspect`，优先用上次量到的
+  原始尺寸，没有就用当前选的宽高比 —— 视频的「自适应」按 16:9 算，生成的绝大多数是 16:9），
+  新加的产出型节点照做。视频结果区同理：`<video>` 在 metadata 回来之前是固有的
+  300×150（不为 0，不会触发框选那个问题），但高度和真实比例差着老远，
+  不占位的话 metadata 一到画面就跳一下。
 - 判断文件类型用 `mediaKindOf(mimeType, filename)`，**不要只看 MIME**：
   部分容器格式（.mp4 / .mkv / .m4a）浏览器会给 `application/octet-stream` 甚至空串。
 - **编组的子节点 position 是相对父节点的**，编组时减去组原点、解组时加回来，
@@ -249,6 +324,7 @@ export type AppType = typeof app;
   （比如音频生成）时改这一处就够，别再抄第四份。
 - 浏览器只放行一个页面的第一个自动下载，之后的会弹窗让用户确认。批量下载就是
   逐个触发 + 让用户点一次「允许」，**不要为了绕过它去做服务端打包**。
+  桌面端没有这个限制，但有另一个（Electron 默认逐个弹「另存为」），见「桌面端」一节。
 - **下载要在各自的隐藏 iframe 里发起，不能用 `<a download>` 点击**（`lib/download.ts`
   的 `downloadViaFrame`）。API 和页面不同源，`download` 属性会被忽略、点击变成顶层
   导航，而同一 frame 里新导航会取消还没收到响应头的旧导航。服务端要先等上游
@@ -301,6 +377,7 @@ export type AppType = typeof app;
   节点。prompt 里的徽章 token 指向的是上游节点 id，上游没变所以原样有效。多选工具条的批量下载阈值
   （`SELECTION_TOOLBAR_MIN = 2`）不要动 —— 排布、编组那几个按钮对单个节点没意义。
 - 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
+- 桌面端的代码签名 / 公证 / 自动更新（现在全不做，未签名包首次打开要手动放行）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
   `{result:{content:[url],status:"success"}}`），把设置面板的生成地址指过去即可。
 

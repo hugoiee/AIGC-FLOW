@@ -1,0 +1,31 @@
+{
+  "name": "@aigc-flow/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "tsup",
+    "start": "electron dist/main.cjs",
+    "typecheck": "tsc --noEmit",
+    "build:web": "DESKTOP=1 pnpm --filter @aigc-flow/client build",
+    "dist:mac": "pnpm run build:web && pnpm run build && electron-builder --mac --arm64 --x64",
+    "dist:win": "pnpm run build:web && pnpm run build && electron-builder --win",
+    "dist:all": "pnpm run build:web && pnpm run build && electron-builder --mac --arm64 --x64 && electron-builder --win"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  },
+  "devDependencies": {
+    "@aigc-flow/server": "workspace:*",
+    "@aigc-flow/shared": "workspace:*",
+    "@hono/node-server": "^2.1.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.4.0",
+    "drizzle-orm": "^0.45.2",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "hono": "^4.13.5",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3"
+  }
+}

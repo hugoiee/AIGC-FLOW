@@ -19,7 +19,10 @@
     "db:generate": "pnpm --filter @aigc-flow/server run db:generate",
     "db:migrate": "pnpm --filter @aigc-flow/server run db:migrate",
     "db:studio": "pnpm --filter @aigc-flow/server run db:studio",
-    "clean": "pnpm -r exec rm -rf dist .next node_modules && rm -rf node_modules"
+    "clean": "pnpm -r exec rm -rf dist .next node_modules && rm -rf node_modules",
+    "desktop": "pnpm --filter @aigc-flow/desktop run build && pnpm --filter @aigc-flow/desktop exec electron dist/main.cjs",
+    "dist:mac": "pnpm --filter @aigc-flow/desktop run dist:mac",
+    "dist:win": "pnpm --filter @aigc-flow/desktop run dist:win"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

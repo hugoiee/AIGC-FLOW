@@ -8,7 +8,12 @@ allowBuilds:
   esbuild: true
   "@biomejs/biome": true
   sharp: true
+  # Electron 的 postinstall 负责下载对应平台的运行时二进制，不跑就没有 electron 可执行文件
+  electron: true
+  # NSIS 路线用不到 Squirrel.Windows，它的安装脚本不必跑
+  electron-winstaller: false
 
 minimumReleaseAgeExclude:
   - tsx@4.23.13
   - zod@4.5.4
+  - electron@44.2.0

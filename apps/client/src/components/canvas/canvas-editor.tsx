@@ -11,7 +11,6 @@ import {
   type NodeMark,
   type Project,
   type ProjectGraph,
-  remapPromptTokens,
   syncPromptTokens,
   TEXT_NODE_HEIGHT,
   TEXT_NODE_TYPE,
@@ -36,11 +35,19 @@ import {
 } from "@xyflow/react";
 import { useTheme } from "next-themes";
 import { type DragEvent, useCallback, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CanvasActionsProvider } from "@/hooks/use-canvas-actions";
 import { useGraphAutosave } from "@/hooks/use-graph-autosave";
 import { useCanvasShortcuts, useGraphHistory } from "@/hooks/use-graph-history";
 import { useMediaUpload } from "@/hooks/use-media-upload";
+import {
+  fromClipboardPayload,
+  offsetToCenter,
+  readClipboard,
+  toClipboardPayload,
+  writeClipboard,
+} from "@/lib/clipboard";
 import { canConnectNodes, sourceResourceOf, targetAcceptsOf } from "@/lib/connection";
 import { downloadableMedia, downloadMedia } from "@/lib/download";
 import {
@@ -73,12 +80,8 @@ import { TextNode } from "./text-node";
 import { VideoGenNode } from "./video-gen-node";
 import "@xyflow/react/dist/style.css";
 
+/** 连续粘贴时每次比上一次多错开的距离，副本压在原件上但露出一角 */
 const PASTE_OFFSET = 40;
-
-/** 只有生成节点带 prompt；文本 / 媒体 / 编组没有 */
-function hasPrompt(data: unknown): data is { prompt: string } {
-  return typeof (data as { prompt?: unknown } | null)?.prompt === "string";
-}
 
 /**
  * 组一个新节点。文本节点要带初始尺寸（它可自由拉伸，尺寸随 graph 落盘），
@@ -169,7 +172,9 @@ export function CanvasEditor({
   // 必须显式把主题传给它的 colorMode，否则暗色下节点是白底白字，完全看不见
   const { resolvedTheme } = useTheme();
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] }>({ nodes: [], edges: [] });
+  // 连续粘贴同一份剪贴板时逐次错开：记住粘了几次，以及粘的是哪一份（换了就归零）
+  const pasteCountRef = useRef(0);
+  const pasteSourceRef = useRef<string | null>(null);
   // 上传是异步的，回调里不能用闭包捕获的 nodes/edges（可能已经过期好几轮）
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -200,6 +205,13 @@ export function CanvasEditor({
     },
     [setNodes, setEdges],
   );
+
+  /** 当前视口中心的画布坐标。新节点、上传的文件、跨项目粘贴都落在这儿 */
+  const viewportCenter = useCallback(() => {
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+  }, [screenToFlowPosition]);
 
   const handleConnect = useCallback(
     (connection: Connection) => {
@@ -240,10 +252,7 @@ export function CanvasEditor({
   /** 生成类节点：默认落在视口中心，也可指定画布坐标（节点选择菜单用） */
   const addGenNode = useCallback(
     (type: string, defaults: Record<string, unknown>, position?: { x: number; y: number }) => {
-      const rect = wrapperRef.current?.getBoundingClientRect();
-      const center = rect
-        ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
-        : { x: 0, y: 0 };
+      const center = viewportCenter();
 
       const node = buildCanvasNode(
         type,
@@ -255,7 +264,7 @@ export function CanvasEditor({
       commitNow(next, edges);
       return node;
     },
-    [screenToFlowPosition, setNodes, commitNow, nodes, edges],
+    [viewportCenter, setNodes, commitNow, nodes, edges],
   );
 
   const handleAddImageGen = useCallback(
@@ -585,50 +594,87 @@ export function CanvasEditor({
     [applyLayout, layoutIds],
   );
 
+  /**
+   * 复制：选区打包成载荷写进 localStorage（见 lib/clipboard.ts），
+   * 所以切到别的项目、别的标签页都还粘得出来。
+   * 顺利时不打扰用户（和以前一样安静），只有失败或有节点被丢掉时才提示。
+   */
   const handleCopy = useCallback(() => {
-    const selectedNodes = nodes.filter((node) => node.selected);
-    if (selectedNodes.length === 0) return;
+    const selectedIds = nodes.filter((node) => node.selected).map((node) => node.id);
+    if (selectedIds.length === 0) return;
 
-    const ids = new Set(selectedNodes.map((node) => node.id));
-    clipboardRef.current = {
-      nodes: selectedNodes,
-      // 只带上两端都在选区内的连线，否则粘出来会指向不存在的节点
-      edges: edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
-    };
-  }, [nodes, edges]);
+    const payload = toClipboardPayload(nodes, edges, selectedIds, {
+      projectId: project.id,
+      projectName: project.name,
+    });
+    if (!payload) {
+      toast.error("没有可复制的节点", { description: "上传中的素材要等传完才能复制" });
+      return;
+    }
 
+    const result = writeClipboard(payload);
+    if (result === "too-large") {
+      toast.error("复制失败", { description: "选中的内容太大，分几批复制试试" });
+      return;
+    }
+    if (result === "unavailable") {
+      toast.error("复制失败", { description: "浏览器不允许写入本地存储" });
+      return;
+    }
+    // 数量对不上说明有节点没进剪贴板（上传中的媒体），得说一声，
+    // 否则用户会以为复制全了，粘完才发现少东西
+    if (payload.nodes.length < selectedIds.length) {
+      toast.info(`已复制 ${payload.nodes.length} 个节点`, {
+        description: "上传中的素材不会被复制",
+      });
+    }
+  }, [nodes, edges, project.id, project.name]);
+
+  /**
+   * 粘贴：读 localStorage 里那份载荷还原成新节点。
+   *
+   * 落点分两种，因为两种场景要的东西不一样：
+   * - **同项目**沿用原坐标 + 40px 错开，连续 ⌘V 逐次递增，副本就落在原件旁边；
+   * - **跨项目**落到当前视口中心 —— 目标画布的空白区域和来源坐标毫无关系，
+   *   照搬原坐标很可能粘到屏幕外，用户只会以为没粘上。
+   */
   const handlePaste = useCallback(() => {
-    const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
-    if (copiedNodes.length === 0) return;
+    const payload = readClipboard();
+    if (!payload) return;
 
-    const idMap = new Map(copiedNodes.map((node) => [node.id, crypto.randomUUID()]));
-    const pastedNodes: Node[] = copiedNodes.map((node) => ({
-      ...node,
-      id: idMap.get(node.id) ?? crypto.randomUUID(),
-      position: { x: node.position.x + PASTE_OFFSET, y: node.position.y + PASTE_OFFSET },
-      selected: true,
-      // prompt 里的文本徽章记的是节点 id，原样粘过去会指向被复制的那个原节点：
-      // 徽章退化成「文本」二字，发请求时那段文本还会被静默丢掉。
-      // 跟着一起粘的换成新 id，没跟着粘的（连线也不会带过来）直接清掉。
-      data: hasPrompt(node.data)
-        ? { ...node.data, prompt: remapPromptTokens(node.data.prompt, idMap) }
-        : node.data,
-    }));
-    const pastedEdges: Edge[] = copiedEdges.map((edge) => ({
-      ...edge,
-      id: crypto.randomUUID(),
-      source: idMap.get(edge.source) ?? edge.source,
-      target: idMap.get(edge.target) ?? edge.target,
-    }));
+    const sameProject = payload.sourceProjectId === project.id;
+    // 换了一份剪贴板（自己重新复制过，或另一个标签页复制了别的）就把错开次数归零
+    const sourceKey = `${payload.sourceProjectId}:${payload.copiedAt}`;
+    if (pasteSourceRef.current !== sourceKey) {
+      pasteSourceRef.current = sourceKey;
+      pasteCountRef.current = 0;
+    }
+    const step = PASTE_OFFSET * pasteCountRef.current;
+    pasteCountRef.current += 1;
+
+    const base = sameProject
+      ? { x: PASTE_OFFSET, y: PASTE_OFFSET }
+      : offsetToCenter(payload, viewportCenter());
+    const { nodes: pastedNodes, edges: pastedEdges } = fromClipboardPayload(payload, {
+      x: base.x + step,
+      y: base.y + step,
+    });
 
     // 原选区取消选中，让粘贴出来的这批成为新的选区，可以连续 Cmd+V
-    const nextNodes = [...nodes.map((node) => ({ ...node, selected: false })), ...pastedNodes];
-    const nextEdges = [...edges, ...pastedEdges];
+    const nextNodes = [
+      ...nodesRef.current.map((node) => (node.selected ? { ...node, selected: false } : node)),
+      ...pastedNodes,
+    ];
+    const nextEdges = [...edgesRef.current, ...pastedEdges];
     setNodes(nextNodes);
     setEdges(nextEdges);
-    clipboardRef.current = { nodes: pastedNodes, edges: pastedEdges };
     commitNow(nextNodes, nextEdges);
-  }, [nodes, edges, setNodes, setEdges, commitNow]);
+
+    // 跨项目粘贴要说一声来源：节点是从别处搬来的，用户得能确认没粘错东西
+    if (!sameProject) {
+      toast.success(`已从「${payload.sourceProjectName}」粘贴 ${pastedNodes.length} 个节点`);
+    }
+  }, [project.id, viewportCenter, setNodes, setEdges, commitNow]);
 
   /** 上传占位节点入场：一次性放上去并入历史栈 */
   const handleUploadNodesCreated = useCallback(
@@ -690,13 +736,10 @@ export function CanvasEditor({
   /** 底部工具条的上传按钮：文件落在当前视口中心 */
   const handlePickFiles = useCallback(
     (files: File[]) => {
-      const rect = wrapperRef.current?.getBoundingClientRect();
-      const center = rect
-        ? screenToFlowPosition({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
-        : { x: 0, y: 0 };
+      const center = viewportCenter();
       startUpload(files, { x: center.x - 112, y: center.y - 80 });
     },
-    [screenToFlowPosition, startUpload],
+    [viewportCenter, startUpload],
   );
 
   const isMove = mode === "move";

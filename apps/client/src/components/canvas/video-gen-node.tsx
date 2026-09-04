@@ -72,7 +72,7 @@ import {
   REJECTED_CHIP_CLASS,
   REJECTED_MEDIA_CLASS,
 } from "./node-mark-badge";
-import { sizePatchOf } from "./node-size";
+import { reservedAspect, sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** 占位区宽高比跟随所选比例；adaptive（自适应）没有具体值，退回 16:9 */
@@ -335,8 +335,14 @@ function ResultArea({
   onNaturalSize: (width: number, height: number) => void;
 }) {
   const [loadFailed, setLoadFailed] = useState(false);
+  // metadata 回来没有。回来之前高度是 <video> 的固有尺寸（300×150）撑的，
+  // 和真实比例差着老远，得自己按比例占住，见 reservedAspect
+  const [loaded, setLoaded] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
-  useEffect(() => setLoadFailed(false), [gen.resultUrl]);
+  useEffect(() => {
+    setLoadFailed(false);
+    setLoaded(false);
+  }, [gen.resultUrl]);
 
   if (gen.status === "ready" && gen.resultUrl && !loadFailed) {
     return (
@@ -346,9 +352,13 @@ function ResultArea({
         controls
         // 视频地址不走缩略参数，metadata 里的 videoWidth 就是原始尺寸
         preload="metadata"
-        onLoadedMetadata={(event) =>
-          onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
-        }
+        // metadata 回来之前先按比例占住高度，回来之后交回给视频自身的比例。
+        // 视频是 object-fit:contain，占位比例和实际比例不一致也只是上下留黑边，不变形
+        style={loaded ? undefined : { aspectRatio: reservedAspect(gen, aspect) }}
+        onLoadedMetadata={(event) => {
+          setLoaded(true);
+          onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight);
+        }}
         onError={() => setLoadFailed(true)}
         // nodrag 由它按指针位置动态挂：画面上放行拖节点，控件条上让给播放器
         onPointerDownCapture={guardVideoDrag}
