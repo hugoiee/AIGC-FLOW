@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { api } from "@/lib/api";
+import { API_BASE, api } from "@/lib/api";
 
-type Health = { status: string; db: string; uptime: number };
+type Health = { status: string; db: string; dbPath: string; uptime: number };
 
 export function DebugConsole() {
   const [health, setHealth] = useState<Health | null>(null);
+  // 页面和后端各自的实际地址。只能在 effect 里读 window：这个组件在静态导出时
+  // 会被预渲染，render 期间读 window.location 两边对不上会 hydration 报错
+  const [origins, setOrigins] = useState<{ client: string; server: string } | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +34,11 @@ export function DebugConsole() {
       setHealth(await healthRes.json());
       setProjects(await listRes.json());
     } catch {
-      setError("连不上后端，确认 apps/server 已在 http://localhost:3001 启动");
+      setError(
+        API_BASE
+          ? `连不上后端，确认 apps/server 已在 ${API_BASE} 启动`
+          : "连不上内嵌的服务，重启应用试试；日志在应用数据目录的 logs/main.log",
+      );
     } finally {
       setLoading(false);
     }
@@ -40,6 +47,12 @@ export function DebugConsole() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const client = window.location.host;
+    // API_BASE 为空串就是同源（桌面端由内嵌的 Hono 一起托管），否则解析出独立 server 的 host
+    setOrigins({ client, server: API_BASE ? new URL(API_BASE).host : client });
+  }, []);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,9 +97,13 @@ export function DebugConsole() {
             <CardDescription>client → server → SQLite</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <StatusRow label="Next.js client" value="localhost:3000" ok />
-            <StatusRow label="Hono server" value="localhost:3001" ok={health?.status === "ok"} />
-            <StatusRow label="SQLite" value="data/aigc-flow.db" ok={health?.db === "ok"} />
+            <StatusRow label="Next.js client" value={origins?.client ?? "…"} ok />
+            <StatusRow
+              label="Hono server"
+              value={origins?.server ?? "…"}
+              ok={health?.status === "ok"}
+            />
+            <StatusRow label="SQLite" value={health?.dbPath ?? "…"} ok={health?.db === "ok"} />
             <Separator className="my-3" />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={loading ? "animate-spin" : ""} />

@@ -7,7 +7,7 @@ import { CreateProjectDialog } from "@/components/create-project-dialog";
 import { EmptyProjects } from "@/components/empty-projects";
 import { ProjectCard } from "@/components/project-card";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { API_BASE, api } from "@/lib/api";
 
 export function ProjectList() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -21,7 +21,11 @@ export function ProjectList() {
       setProjects(await res.json());
       setError(null);
     } catch {
-      setError("加载项目列表失败，确认 server 已在 http://localhost:3001 启动");
+      setError(
+        API_BASE
+          ? `加载项目列表失败，确认 server 已在 ${API_BASE} 启动`
+          : "加载项目列表失败，内嵌的服务可能没起来，重启应用试试",
+      );
     } finally {
       setLoading(false);
     }
