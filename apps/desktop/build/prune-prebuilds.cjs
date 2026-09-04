@@ -22,7 +22,12 @@ exports.default = async function pruneBuilds(context) {
 
   const resources =
     platform === "darwin"
-      ? join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources")
+      ? join(
+          context.appOutDir,
+          `${context.packager.appInfo.productFilename}.app`,
+          "Contents",
+          "Resources",
+        )
       : join(context.appOutDir, "resources");
   const dir = join(resources, "app.asar.unpacked", "node_modules", "better-sqlite3", "prebuilds");
 

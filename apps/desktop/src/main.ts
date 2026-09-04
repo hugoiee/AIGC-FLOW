@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { app, BrowserWindow, dialog } from "electron";
+import { autoSaveDownloads } from "./downloads";
 import { listenWithFallback } from "./listen";
 import { initLog } from "./log";
 import { migrationsFolder, webRoot } from "./resources";
@@ -29,6 +30,9 @@ app.setPath(
 );
 const USER_DATA = app.getPath("userData");
 const LOG_FILE = initLog(USER_DATA);
+
+// Windows 上不设这个，系统通知不会带应用身份、也可能根本不弹
+app.setAppUserModelId("com.aigcflow.desktop");
 
 let mainWindow: BrowserWindow | null = null;
 /** 退出时要收尾的两样东西，will-quit 里用 */
@@ -175,6 +179,8 @@ app
   .whenReady()
   .then(async () => {
     const port = await bootServer();
+    // 必须在 app ready 之后：defaultSession 这时才存在
+    autoSaveDownloads();
     mainWindow = createWindow(port);
 
     // macOS 的惯例：图标还在 dock 上时点一下要能把窗口叫回来

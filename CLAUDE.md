@@ -142,6 +142,11 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 - **未保存时的 `beforeunload` 在 Electron 下不弹框、只静默拒绝关闭**，表现是「有改动时
   ⌘Q 完全没反应」。必须在主进程接管 `will-prevent-unload`，且注意那个事件上
   `event.preventDefault()` 的语义是反的 —— 它表示「放行关闭」。
+- **Electron 默认对每一个下载都弹一次「另存为」**，批量下载 4 个素材就是 4 个弹窗
+  （浏览器从来不是这个行为）。`downloads.ts` 接管 `will-download` 自动存进系统下载目录，
+  并按「名字 (1).png」避重 —— 存盘名取的是节点名，而节点名可以重复。代价是没有下载栏、
+  下完无声无息，所以一批下完补一条系统通知（Windows 上要先 `setAppUserModelId`，
+  不然通知不弹）。
 - 退出时**先 `closeAllConnections()` 再 `close()`**（同 `apps/server/src/index.ts` 的教训），
   再 `wal_checkpoint(TRUNCATE)` + `db.$client.close()`，否则 userData 里会留 `-wal`/`-shm`。
 
@@ -319,6 +324,7 @@ export type AppType = typeof app;
   （比如音频生成）时改这一处就够，别再抄第四份。
 - 浏览器只放行一个页面的第一个自动下载，之后的会弹窗让用户确认。批量下载就是
   逐个触发 + 让用户点一次「允许」，**不要为了绕过它去做服务端打包**。
+  桌面端没有这个限制，但有另一个（Electron 默认逐个弹「另存为」），见「桌面端」一节。
 - **下载要在各自的隐藏 iframe 里发起，不能用 `<a download>` 点击**（`lib/download.ts`
   的 `downloadViaFrame`）。API 和页面不同源，`download` 属性会被忽略、点击变成顶层
   导航，而同一 frame 里新导航会取消还没收到响应头的旧导航。服务端要先等上游
