@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./app-type": "./src/app.ts"
+    "./app-type": "./src/app.ts",
+    "./app": "./src/app.ts",
+    "./db": "./src/db/index.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
