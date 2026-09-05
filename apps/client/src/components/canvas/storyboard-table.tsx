@@ -1,9 +1,16 @@
 "use client";
 
 import {
+  cellTextOf,
+  DURATION_MAX,
+  DURATION_MIN,
+  normalizeCellText,
   parseClipboardTable,
+  SHOT_ROLES,
   STORYBOARD_COLUMNS,
   STORYBOARD_MAX_ROWS,
+  type StoryboardCellKind,
+  type StoryboardColumn,
   type StoryboardField,
   type StoryboardRow,
   toClipboardTable,
@@ -20,6 +27,8 @@ import {
   Maximize2,
   MoreHorizontal,
   Plus,
+  RefreshCw,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -32,33 +41,41 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 /**
- * 每列的展示细节。字段名和中文表头在 shared 的 STORYBOARD_COLUMNS 里（那份是契约，
- * 以后接 LLM 拆分镜要复用），这里只管排版：多宽、是不是多行。
+ * 每列多宽。列的顺序、中文名和形态（text / role / seconds / derived）都在
+ * shared 的 STORYBOARD_COLUMNS 里 —— 那份是契约，喂给 LLM 时也用同一份；
+ * 这里只管排版。
  *
  * 宽度用 minmax：节点可以拉窄，窄到 min 之后整张表横向滚动，
  * 而不是把「完整 Prompt」挤成一个字一行。
  */
-const COLUMN_LAYOUT: Record<StoryboardField, { width: string; multiline: boolean }> = {
-  shot: { width: "minmax(120px, 1.4fr)", multiline: true },
-  duration: { width: "72px", multiline: false },
-  dialogue: { width: "minmax(120px, 1.4fr)", multiline: true },
-  performance: { width: "minmax(120px, 1.4fr)", multiline: true },
-  performancePrompt: { width: "minmax(140px, 1.6fr)", multiline: true },
-  fullPrompt: { width: "minmax(160px, 1.8fr)", multiline: true },
+const COLUMN_WIDTHS: Record<StoryboardColumn["key"], string> = {
+  shotNumber: "64px",
+  shot: "96px",
+  duration: "72px",
+  dialogue: "minmax(120px, 1.4fr)",
+  performance: "minmax(120px, 1.4fr)",
+  performancePrompt: "minmax(140px, 1.6fr)",
+  fullPrompt: "minmax(160px, 1.8fr)",
 };
 
-/** 镜号列 + 各内容列 + 行操作列 */
+/** 各内容列 + 行操作列 */
 const GRID_TEMPLATE = [
-  "44px",
-  ...STORYBOARD_COLUMNS.map((column) => COLUMN_LAYOUT[column.key].width),
+  ...STORYBOARD_COLUMNS.map((column) => COLUMN_WIDTHS[column.key]),
   "36px",
 ].join(" ");
 
 /** 各列 min 宽之和。低于这个宽度就横向滚动，不再压缩 */
-const MIN_TABLE_WIDTH = 812;
+const MIN_TABLE_WIDTH = 808;
 
 type StoryboardTableProps = {
   rows: StoryboardRow[];
@@ -70,6 +87,10 @@ type StoryboardTableProps = {
    * 弹层里的那份不传，免得套娃（同 prompt-editor 的做法）。
    */
   onExpand?: () => void;
+  /** 生成表演 Prompt。不传行 id 就是整表批量，传了就是只重生那一行 */
+  onGenerate: (rowId?: string) => void;
+  /** 正在生成的目标："all" 是整表，字符串是某一行的 id，null 是空闲 */
+  generating: "all" | string | null;
 };
 
 /**
@@ -81,13 +102,16 @@ export function StoryboardTable({
   onRowsChange,
   large = false,
   onExpand,
+  onGenerate,
+  generating,
 }: StoryboardTableProps) {
   const atMax = rows.length >= STORYBOARD_MAX_ROWS;
+  const busy = generating !== null;
 
   /**
    * 从 Excel / Google Sheets 粘进来的一整块内容：以被粘的那个格子为左上角铺开。
-   * 丢弃的部分（超出 200 行上限、超出最右一列）要说出来 —— 悄悄少一截
-   * 比直接失败更难发现。
+   * 丢弃的部分（超出 200 行上限、超出最右一列、落在只读的完整 Prompt 上、
+   * 机位不是三个合法值之一）要说出来 —— 悄悄少一截比直接失败更难发现。
    */
   function pasteBlock(anchorIndex: number, field: StoryboardField, block: string[][]) {
     onRowsChange(withBlockPasted(rows, anchorIndex, field, block));
@@ -96,9 +120,12 @@ export function StoryboardTable({
     const anchorColumn = STORYBOARD_COLUMNS.findIndex((column) => column.key === field);
     const droppedRows = Math.max(0, anchorIndex + block.length - STORYBOARD_MAX_ROWS);
     const droppedColumns = Math.max(0, anchorColumn + columns - STORYBOARD_COLUMNS.length);
+    // 落在派生列上的那一列写不进去，单独说 —— 它在表内，不属于「超出右边界」
+    const hitDerived = anchorColumn + columns > STORYBOARD_COLUMNS.length - 1;
     const notes = [
       droppedRows > 0 ? `超出 ${STORYBOARD_MAX_ROWS} 行上限的 ${droppedRows} 行已丢弃` : "",
       droppedColumns > 0 ? `右侧放不下的 ${droppedColumns} 列已丢弃` : "",
+      hitDerived ? "「完整 Prompt」是算出来的，落在它上面的内容没写入" : "",
     ].filter(Boolean);
 
     toast.success(`已粘贴 ${block.length} 行 × ${columns} 列`, {
@@ -123,15 +150,14 @@ export function StoryboardTable({
       {/*
         只挂 nowheel（表格自己滚，不缩放画布），**不挂 nodrag** ——
         整块挂上的话 880px 宽的节点只剩四周 8px 的边能拖走。
-        真正需要 nodrag 的是输入框（要能框选文字）和按钮，它们各自挂了；
-        表头、镜号列、行下面的空白照旧可以拖动节点。
+        真正需要 nodrag 的是输入框、下拉和按钮，它们各自挂了；
+        表头、行下面的空白照旧可以拖动节点。
       */}
       <div className="nowheel min-h-0 flex-1 overflow-auto rounded-md border">
         <div
           className="grid"
           style={{ gridTemplateColumns: GRID_TEMPLATE, minWidth: MIN_TABLE_WIDTH }}
         >
-          <HeaderCell className="text-center">镜号</HeaderCell>
           {STORYBOARD_COLUMNS.map((column) => (
             <HeaderCell key={column.key}>{column.label}</HeaderCell>
           ))}
@@ -145,9 +171,11 @@ export function StoryboardTable({
               index={index}
               rowCount={rows.length}
               large={large}
+              rows={rows}
               onRowsChange={onRowsChange}
               onPasteBlock={pasteBlock}
-              rows={rows}
+              onGenerate={onGenerate}
+              generating={generating}
             />
           ))}
         </div>
@@ -158,12 +186,24 @@ export function StoryboardTable({
           variant="ghost"
           size="sm"
           className="nodrag h-7 gap-1 px-2 text-xs"
-          disabled={atMax}
+          disabled={atMax || busy}
           onClick={() => onRowsChange(withRowInserted(rows, rows.length))}
         >
           <Plus className="size-3.5" />
           添加一行
         </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="nodrag h-7 gap-1 px-2 text-xs"
+          disabled={busy || rows.length === 0}
+          onClick={() => onGenerate()}
+        >
+          <Sparkles className={cn("size-3.5", generating === "all" && "animate-pulse")} />
+          {generating === "all" ? "生成中…" : "生成表演 Prompt"}
+        </Button>
+
         <span className="text-[11px] text-muted-foreground tabular-nums">
           共 {rows.length} 镜{atMax ? `（已达上限 ${STORYBOARD_MAX_ROWS}）` : ""}
         </span>
@@ -218,6 +258,8 @@ function Row({
   large,
   onRowsChange,
   onPasteBlock,
+  onGenerate,
+  generating,
 }: {
   row: StoryboardRow;
   rows: StoryboardRow[];
@@ -226,21 +268,24 @@ function Row({
   large: boolean;
   onRowsChange: (rows: StoryboardRow[]) => void;
   onPasteBlock: (anchorIndex: number, field: StoryboardField, block: string[][]) => void;
+  onGenerate: (rowId?: string) => void;
+  generating: "all" | string | null;
 }) {
+  const busy = generating === "all" || generating === row.id;
+
   return (
     <>
-      <div className="flex items-start justify-center border-r border-b px-2 py-1.5 text-muted-foreground text-xs tabular-nums">
-        {index + 1}
-      </div>
-
       {STORYBOARD_COLUMNS.map((column) => (
-        <StoryboardCell
+        <Cell
           key={column.key}
-          value={row[column.key]}
-          multiline={COLUMN_LAYOUT[column.key].multiline}
+          column={column}
+          row={row}
           large={large}
-          onCommit={(value) => onRowsChange(withCell(rows, row.id, column.key, value))}
-          onPasteBlock={(block) => onPasteBlock(index, column.key, block)}
+          busy={busy}
+          onCommit={(value) =>
+            onRowsChange(withCell(rows, row.id, column.key as StoryboardField, value))
+          }
+          onPasteBlock={(block) => onPasteBlock(index, column.key as StoryboardField, block)}
         />
       ))}
 
@@ -251,12 +296,17 @@ function Row({
               variant="ghost"
               size="icon"
               className="nodrag size-6"
-              aria-label={`第 ${index + 1} 镜的操作`}
+              aria-label={`第 ${index + 1} 行的操作`}
             >
               <MoreHorizontal className="size-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem disabled={generating !== null} onSelect={() => onGenerate(row.id)}>
+              <RefreshCw />
+              重新生成表演 Prompt
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={index === 0}
               onSelect={() => onRowsChange(withRowMoved(rows, row.id, -1))}
@@ -290,8 +340,79 @@ function Row({
   );
 }
 
+/** 按列的形态分派到具体的单元格实现。边框统一画在这一层的外壳上 */
+function Cell({
+  column,
+  row,
+  large,
+  busy,
+  onCommit,
+  onPasteBlock,
+}: {
+  column: StoryboardColumn;
+  row: StoryboardRow;
+  large: boolean;
+  busy: boolean;
+  onCommit: (value: string) => void;
+  onPasteBlock: (block: string[][]) => void;
+}) {
+  const text = cellTextOf(row, column.key);
+
+  if (column.kind === "derived") {
+    return (
+      <div
+        className={cn(
+          "select-text whitespace-pre-wrap break-words border-r border-b px-2 py-1.5",
+          // 派生列压暗一档，一眼看出「这列不用填」
+          "bg-muted/30 text-muted-foreground",
+          large ? "text-sm" : "text-xs",
+        )}
+      >
+        {text}
+      </div>
+    );
+  }
+
+  if (column.kind === "role") {
+    return (
+      <div className="flex border-r border-b p-1">
+        <Select value={row.shot} onValueChange={onCommit}>
+          <SelectTrigger
+            size="sm"
+            className={cn(
+              // 表格里的下拉要看起来像格子的一部分：去边框、撑满、字号跟随
+              "nodrag h-auto w-full self-start border-none bg-transparent px-1 py-0.5 shadow-none dark:bg-transparent dark:hover:bg-accent/40",
+              large ? "text-sm" : "text-xs",
+            )}
+          >
+            <SelectValue placeholder="—" />
+          </SelectTrigger>
+          <SelectContent>
+            {SHOT_ROLES.map((role) => (
+              <SelectItem key={role} value={role}>
+                {role}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
+  return (
+    <StoryboardCell
+      value={text}
+      kind={column.kind}
+      large={large}
+      busy={busy}
+      onCommit={onCommit}
+      onPasteBlock={onPasteBlock}
+    />
+  );
+}
+
 /**
- * 一个可编辑单元格。
+ * 一个可编辑单元格（文本 / 多行 / 秒数）。
  *
  * 值由本地 draft 驱动，不直接绑 node data —— 中文输入法的老坑（见 CLAUDE.md 与
  * text-node.tsx）：值绕经 React Flow 的 store 再回流是滞后的，React 发现 value
@@ -299,19 +420,22 @@ function Row({
  * 「中文」会打成 zzhzhozhonzhong中wwewen文。
  *
  * 和文本节点不同的是这里的输入框**常驻**（表格没有「双击进编辑」这一步），
- * 所以外部改动要能同步进来：撤销、粘贴，以及放大弹层和节点里两份表格同时挂载时
- * 在另一份里改了同一格。同步只在**没聚焦**时做 —— 聚焦时写回正是要避开的那件事。
+ * 所以外部改动要能同步进来：撤销、粘贴、LLM 写回表演 Prompt，以及放大弹层和
+ * 节点里两份表格同时挂载时在另一份里改了同一格。同步只在**没聚焦**时做 ——
+ * 聚焦时写回正是要避开的那件事。
  */
 function StoryboardCell({
   value,
-  multiline,
+  kind,
   large,
+  busy,
   onCommit,
   onPasteBlock,
 }: {
   value: string;
-  multiline: boolean;
+  kind: StoryboardCellKind;
   large: boolean;
+  busy: boolean;
   onCommit: (value: string) => void;
   onPasteBlock: (block: string[][]) => void;
 }) {
@@ -331,6 +455,7 @@ function StoryboardCell({
 
   const shared = {
     value: draft,
+    disabled: busy,
     onChange: (event: { target: { value: string } }) => flush(event.target.value),
     onFocus: () => {
       focusedRef.current = true;
@@ -348,7 +473,9 @@ function StoryboardCell({
       // 组词没结束就失焦（点了别处）时，把已经上屏的部分收下
       composingRef.current = false;
       focusedRef.current = false;
-      flush(event.currentTarget.value);
+      // 规范化后再写：时长每敲一下就被夹进 4..30，而聚焦期间 draft 不接收回流，
+      // 想输 50 的话数据里是 30、格子里还显示 50，失焦也不会自己对齐
+      flush(normalizeCellText(kind, event.currentTarget.value));
     },
     /**
      * 从 Excel / Google Sheets 粘一块内容进来时，以本格为左上角铺开（见 pasteBlock）。
@@ -390,11 +517,11 @@ function StoryboardCell({
     },
     className: cn(
       "nodrag w-full resize-none bg-transparent px-2 py-1.5 outline-none",
-      "placeholder:text-muted-foreground/50 focus:bg-accent/40",
+      "placeholder:text-muted-foreground/50 focus:bg-accent/40 disabled:opacity-60",
       large ? "text-sm" : "text-xs",
       // 单行输入不跟着行高拉伸，否则一行里多行格子撑高之后，
-      // 「3s」会被垂直居中到半空，和旁边顶部对齐的格子错开
-      multiline ? "h-full" : "self-start",
+      // 数字会被垂直居中到半空，和旁边顶部对齐的格子错开
+      kind === "multiline" ? "h-full" : "self-start",
     ),
   };
 
@@ -402,10 +529,18 @@ function StoryboardCell({
     // 边框画在外壳上而不是输入框上：输入框的高度不一定等于行高（见上面的 self-start），
     // 画在它身上的话竖线会断成一截一截
     <div className="flex border-r border-b">
-      {multiline ? (
+      {kind === "multiline" ? (
         <textarea {...shared} rows={large ? 4 : 2} />
       ) : (
-        <input type="text" {...shared} />
+        <input
+          {...shared}
+          // 秒数用 number：手机 / 触控板上直接出数字键盘，也带上下微调
+          type={kind === "seconds" ? "number" : "text"}
+          min={kind === "seconds" ? DURATION_MIN : undefined}
+          max={kind === "seconds" ? DURATION_MAX : undefined}
+          step={kind === "seconds" ? 1 : undefined}
+          placeholder={kind === "seconds" ? `${DURATION_MIN}-${DURATION_MAX}` : undefined}
+        />
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { healthRoute } from "./routes/health";
 import { llmRoute } from "./routes/llm";
 import { projectsRoute } from "./routes/projects";
 import { settingsRoute } from "./routes/settings";
+import { storyboardRoute } from "./routes/storyboard";
 import { uploadsRoute } from "./routes/uploads";
 
 /**
@@ -23,7 +24,8 @@ const app = new Hono()
   .route("/api/uploads", uploadsRoute)
   .route("/api/generate", generateRoute)
   .route("/api/generations", generationsRoute)
-  .route("/api/llm", llmRoute);
+  .route("/api/llm", llmRoute)
+  .route("/api/storyboard", storyboardRoute);
 
 app.onError((err, c) => {
   console.error("[server error]", err);
