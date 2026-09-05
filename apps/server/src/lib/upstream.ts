@@ -25,3 +25,31 @@ export function snippet(text: string, max = 300): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
+
+/**
+ * 建连阶段的错误码：只有这些才是真的「连不上」，其余都是连上以后出的事。
+ * 分清两者很重要 —— 把「等待中断」也报成「连不上」，用户会一直去查网络和地址。
+ */
+const CONNECT_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+/** fetch 抛出的 `fetch failed` 本身没信息，真正的原因在 cause 上 */
+export function fetchFailureOf(error: unknown): { code: string; detail: string } {
+  const cause = (error as { cause?: unknown })?.cause;
+  const source = (cause ?? error) as { code?: unknown; message?: unknown } | null;
+  const code = typeof source?.code === "string" ? source.code : "";
+  const detail = typeof source?.message === "string" ? source.message : String(source ?? error);
+  return { code, detail: snippet(detail) };
+}
+
+/** 没有 code 时也算「连不上」：信息不足时按最常见的原因报，比甩一句 fetch failed 强 */
+export function isConnectFailure(code: string): boolean {
+  return !code || CONNECT_ERROR_CODES.has(code);
+}

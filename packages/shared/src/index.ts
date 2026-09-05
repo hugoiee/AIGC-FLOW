@@ -1,6 +1,7 @@
 export * from "./clipboard";
 export * from "./graph";
 export * from "./image-gen";
+export * from "./llm";
 export * from "./media";
 export * from "./media-ref";
 export * from "./node-mark";
