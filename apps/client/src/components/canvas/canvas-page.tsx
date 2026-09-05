@@ -49,6 +49,16 @@ export function CanvasPage({ projectId }: { projectId: number }) {
     };
   }, [projectId]);
 
+  // 标签页标题跟着当前项目走，改名后立刻同步（rename 会换掉 state.project）。
+  // 项目名是运行时数据，静态导出的 metadata 里拿不到，只能在客户端写 document.title；
+  // 加载中 / 加载失败时保持 page.tsx 里那份静态标题不动。
+  // 桌面端的窗口标题也跟着这里变。
+  const projectName = state.status === "ready" ? state.project.name : null;
+  useEffect(() => {
+    if (projectName === null) return;
+    document.title = `画布 · ${projectName}`;
+  }, [projectName]);
+
   const handleRename = useCallback(
     async (name: string) => {
       const res = await api.api.projects[":id"].$patch({

@@ -91,7 +91,7 @@ export function NodePalette({
         }}
       />
 
-      <Separator orientation="vertical" className="!h-5 mx-1 self-center" />
+      <Separator orientation="vertical" className="!h-5 !self-center mx-1" />
 
       <Tooltip>
         <TooltipTrigger asChild>
@@ -129,7 +129,7 @@ export function NodePalette({
         </TooltipContent>
       </Tooltip>
 
-      <Separator orientation="vertical" className="!h-5 mx-1 self-center" />
+      <Separator orientation="vertical" className="!h-5 !self-center mx-1" />
 
       <Tooltip>
         <TooltipTrigger asChild>

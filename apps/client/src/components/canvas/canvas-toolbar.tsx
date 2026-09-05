@@ -22,7 +22,6 @@ const GROUP =
 type CanvasInfoGroupProps = {
   project: Project;
   nodeCount: number;
-  edgeCount: number;
   saveStatus: SaveStatus;
   onRename: (name: string) => Promise<void>;
   /** 素材按标记的计数：采用 / 废弃 / 待审（有素材但还没打标） */
@@ -69,7 +68,6 @@ const MARK_CHIPS: Array<{
 export function CanvasInfoGroup({
   project,
   nodeCount,
-  edgeCount,
   saveStatus,
   onRename,
   marks,
@@ -88,17 +86,15 @@ export function CanvasInfoGroup({
         <TooltipContent side="bottom">返回项目列表</TooltipContent>
       </Tooltip>
 
-      <Separator orientation="vertical" className="!h-5" />
+      <Separator orientation="vertical" className="!h-5 !self-center" />
 
       <ProjectName name={project.name} onRename={onRename} />
 
-      <Separator orientation="vertical" className="!h-5" />
+      <Separator orientation="vertical" className="!h-5 !self-center" />
 
-      <span className="whitespace-nowrap px-1 text-muted-foreground text-xs">
-        {nodeCount} 节点 · {edgeCount} 连线
-      </span>
+      <span className="whitespace-nowrap px-1 text-muted-foreground text-xs">{nodeCount} 节点</span>
 
-      <Separator orientation="vertical" className="!h-5" />
+      <Separator orientation="vertical" className="!h-5 !self-center" />
 
       {/* 按标记计数，点击选中那一批。一个素材都没有时三个都置灰，芯片本身不隐藏，位置稳定 */}
       <span className="flex items-center">
@@ -130,7 +126,7 @@ export function CanvasInfoGroup({
         })}
       </span>
 
-      <Separator orientation="vertical" className="!h-5" />
+      <Separator orientation="vertical" className="!h-5 !self-center" />
 
       <span className="px-1">
         <SaveIndicator status={saveStatus} />

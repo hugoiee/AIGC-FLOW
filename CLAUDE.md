@@ -293,6 +293,16 @@ export type AppType = typeof app;
   `lib/group.ts` 的 `sameParentSelection()`，否则顶层节点和组内子节点混在一起
   算包围盒会得到垃圾数字。另外 React Flow 要求**父节点排在数组的子节点前面**，
   `fromPersistedGraph` 里统一重排过。
+- **胶囊按钮组里的竖分隔符必须写 `!self-center`**，光 `self-center` 不管用。
+  shadcn 的 `Separator` 带 `data-vertical:self-stretch`，编出来是
+  `.data-vertical\:self-stretch:where([data-orientation=vertical])` —— `:where()`
+  特异性是 0，和 `.self-center` 打平，胜负只看谁排在生成的 CSS 后面，而 Tailwind
+  把 `.self-center` 排在前面，于是 stretch 赢。高度被 `!h-5` 定死后 `stretch` 退化成
+  贴交叉轴起点，表现就是分隔符靠上。`components/ui/` 是 shadcn 生成的不手改，
+  只能在调用处用 `!` 压过去。
+- **标签页标题里的项目名只能在客户端写**（`canvas-page.tsx` 的 `document.title`）：
+  项目名是运行时数据，静态导出的 `metadata` 里塞不进去。`page.tsx` 那句静态
+  `title` 留着当加载中 / 失败时的兜底。桌面端窗口标题跟着 `document.title` 走。
 - **React Flow 的类名带双下划线，写不了 Tailwind 的 arbitrary variant** ——
   `[&_.react-flow__pane]` 里的 `_` 会被 Tailwind 当成空格，类名被拆开，规则根本
   生成不出来。这类样式只能写进 `globals.css`，而且**不能包在 `@layer` 里**：

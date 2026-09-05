@@ -890,7 +890,6 @@ export function CanvasEditor({
               <CanvasInfoGroup
                 project={project}
                 nodeCount={nodes.length}
-                edgeCount={edges.length}
                 saveStatus={status}
                 onRename={onRename}
                 marks={marks}
