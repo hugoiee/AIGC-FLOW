@@ -150,7 +150,7 @@ export function SelectionToolbar({
             </TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="!h-5 mx-1" />
+          <Separator orientation="vertical" className="!h-5 !self-center mx-1" />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -213,7 +213,7 @@ export function SelectionToolbar({
         </>
       )}
 
-      <Separator orientation="vertical" className="!h-5 mx-1" />
+      <Separator orientation="vertical" className="!h-5 !self-center mx-1" />
 
       <DropdownMenu>
         <Tooltip>

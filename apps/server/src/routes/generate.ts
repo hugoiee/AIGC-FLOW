@@ -12,7 +12,7 @@ import { Agent, fetch as undiciFetch } from "undici";
 import { db } from "../db";
 import { generations } from "../db/schema";
 import { getAppSettings } from "../db/settings";
-import { messageOf, snippet } from "../lib/upstream";
+import { fetchFailureOf, isConnectFailure, messageOf, snippet } from "../lib/upstream";
 
 /** 内网 /aigc 的返回结构 */
 type AigcResponse = {
@@ -33,26 +33,6 @@ type AigcResponse = {
  */
 const aigcAgent = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 10_000 });
 
-/** 建连阶段的错误码：这些才是真的「连不上」，其余都是连上以后出的事 */
-const CONNECT_ERROR_CODES = new Set([
-  "ECONNREFUSED",
-  "ENOTFOUND",
-  "EAI_AGAIN",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ETIMEDOUT",
-  "UND_ERR_CONNECT_TIMEOUT",
-]);
-
-/** fetch 抛出的 `fetch failed` 本身没信息，真正的原因在 cause 上 */
-function fetchFailureOf(error: unknown): { code: string; detail: string } {
-  const cause = (error as { cause?: unknown })?.cause;
-  const source = (cause ?? error) as { code?: unknown; message?: unknown } | null;
-  const code = typeof source?.code === "string" ? source.code : "";
-  const detail = typeof source?.message === "string" ? source.message : String(source ?? error);
-  return { code, detail: snippet(detail) };
-}
-
 /** 转发到内网 /aigc 并取出结果地址 */
 async function callAigc(
   endpoint: string,
@@ -70,7 +50,7 @@ async function callAigc(
   } catch (error) {
     const { code, detail } = fetchFailureOf(error);
     console.error("[generate] fetch failed", code || "(no code)", detail);
-    if (!code || CONNECT_ERROR_CODES.has(code)) {
+    if (isConnectFailure(code, detail)) {
       return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
     }
     // 连上了但没等到完整响应（对端断开、中途网络抖动等），把原因如实带出去

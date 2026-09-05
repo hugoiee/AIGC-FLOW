@@ -91,7 +91,7 @@ export function CanvasControls({
         <Plus />
       </ControlButton>
 
-      <Separator orientation="vertical" className="!h-5 mx-0.5" />
+      <Separator orientation="vertical" className="!h-5 !self-center mx-0.5" />
 
       <ControlButton label="适应画布" onClick={() => void fitView({ duration: ZOOM_DURATION })}>
         <Maximize />
