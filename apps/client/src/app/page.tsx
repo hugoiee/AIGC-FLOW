@@ -1,5 +1,8 @@
+import { ChartColumn } from "lucide-react";
 import Link from "next/link";
 import { ProjectList } from "@/components/project-list";
+import { StatsDialog } from "@/components/stats-dialog";
+import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
   return (
@@ -14,6 +17,15 @@ export default function HomePage() {
           <Link href="/debug" className="hover:text-foreground">
             自检
           </Link>
+          {/* 不传 projectId 就是全局口径：跨项目的流水都在这儿，画布里的那个只看当前项目 */}
+          <StatsDialog
+            trigger={
+              <Button variant="outline" size="sm">
+                <ChartColumn />
+                全局记录
+              </Button>
+            }
+          />
         </nav>
       </header>
 

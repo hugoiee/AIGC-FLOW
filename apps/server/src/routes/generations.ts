@@ -3,29 +3,47 @@ import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { db } from "../db";
-import { generations } from "../db/schema";
+import { generations, projects } from "../db/schema";
 
-/** 列表只回最近这么多条；统计始终是全量聚合，不受列表截断影响 */
+/** 列表默认只回最近这么多条；统计始终是全量聚合，不受列表截断影响 */
 const LIST_LIMIT = 200;
+/** 导出要的是全量明细，但仍留一个上限兜底，别让一次请求把库整个吐出来 */
+const MAX_LIMIT = 5000;
 
 /**
  * 带 projectId 只看该项目（画布）的流水，成本按项目核算；
  * 不带就是全局口径，含加项目列之前的老记录和已删项目留下的记录。
+ * limit 给导出用（面板列表只要最近 200 条，导出要全量）。
  */
 const listQuerySchema = z.object({
   projectId: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(MAX_LIMIT).optional(),
 });
 
 export const generationsRoute = new Hono().get("/", zValidator("query", listQuerySchema), (c) => {
-  const { projectId } = c.req.valid("query");
+  const { projectId, limit } = c.req.valid("query");
   const scope = projectId === undefined ? undefined : eq(generations.projectId, projectId);
 
+  // 全局口径下光有 project_id 看不出是哪张画布，左连出项目名；
+  // 老记录和已删项目的 project_id 是 null，join 不上，前端按「未归属」显示。
   const items = db
-    .select()
+    .select({
+      id: generations.id,
+      projectId: generations.projectId,
+      projectName: projects.name,
+      kind: generations.kind,
+      payload: generations.payload,
+      status: generations.status,
+      error: generations.error,
+      resultUrl: generations.resultUrl,
+      durationSeconds: generations.durationSeconds,
+      createdAt: generations.createdAt,
+    })
     .from(generations)
+    .leftJoin(projects, eq(generations.projectId, projects.id))
     .where(scope)
     .orderBy(desc(generations.id))
-    .limit(LIST_LIMIT)
+    .limit(limit ?? LIST_LIMIT)
     .all();
 
   const all = db

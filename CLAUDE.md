@@ -85,11 +85,23 @@ video_list / audio_list）里的位置（从 1 数起）；列表保持连线顺
 连线动画用 motion（`animated-edge.tsx`，描边生长后淡出）。
 每次转发 `/aigc` 都在 `generations` 表记一条流水（完整请求 JSON、状态、
 视频时长），**按项目归属**（`project_id`，生成请求必带 `projectId`，两个生成节点从
-`useCanvasActions().projectId` 拿）。右上角的数据统计面板（`stats-dialog.tsx`）只汇总
-当前画布的次数与视频总秒数（自动时长的不计入、单独计数），供按项目核算开销；
-`GET /api/generations?projectId=<id>`，不带 projectId 是全局口径（含加列前的老记录）。
+`useCanvasActions().projectId` 拿）。数据统计面板（`stats-dialog.tsx`）**一个组件两个口径**：
+画布右上角传 `projectId`，只汇总当前画布的次数与视频总秒数（自动时长的不计入、单独计数），
+供按项目核算开销；首页 header 的「全局记录」按 `trigger` prop 换成带文字的按钮、
+**不传 projectId**，看全部流水（含加列前的老记录和已删项目留下的），此时明细每行多一枚
+项目名徽章（服务端 left join `projects`，join 不上的显示「未归属」）。
+`GET /api/generations?projectId=<id>&limit=<n>`：列表默认只回最近 200 条
+（`LIST_LIMIT`），统计始终全量聚合、不受截断影响；`limit` 是给导出用的，上限 5000。
 删项目不删流水：删除路由先把该项目流水的 `project_id` 置空再删（连接开着
 `foreign_keys`，迁移里的外键没带 ON DELETE，不先解开会被约束挡住）。
+面板里的「导出 Excel」出真 .xlsx（`lib/generations-export.ts`，用
+`write-excel-file/browser`，根路径没有 `.` 导出、只能走 `/browser` 子路径）。
+**导出的是重新拉的全量，不是列表里那 200 条**，否则用户拿到的表会悄悄少一截。
+**Excel 的日期是从 1900 起算的天数、没有时区**，而这个库直接拿 `date.getTime()`（UTC 毫秒）
+换算，原样传进去 UTC+8 看到的时间会比面板列表（`toLocaleString()`）早 8 小时 ——
+所以 `asExcelLocalDate` 先减掉 `getTimezoneOffset()` 把本地墙上时间平移成「假装是 UTC」。
+存盘用库自带的 `toFile()`（blob URL + `<a download>`）：blob 同源，和 `lib/download.ts`
+里跨源 API 那个「download 属性被忽略、变成顶层导航」的坑不是一回事，用不着隐藏 iframe。
 **节点标记**：素材类节点（媒体 / 图像生成 / 视频生成）可标成「采用 / 废弃」，
 不标就是「还没审」（三态，刻意不做星级和颜色标签）。契约在
 `packages/shared/src/node-mark.ts`（`data.mark`），客户端只有 `lib/node-mark.ts` 一份判断
