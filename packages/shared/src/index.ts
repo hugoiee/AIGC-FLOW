@@ -8,5 +8,6 @@ export * from "./node-mark";
 export * from "./project";
 export * from "./prompt-token";
 export * from "./settings";
+export * from "./storyboard";
 export * from "./text-node";
 export * from "./video-gen";
