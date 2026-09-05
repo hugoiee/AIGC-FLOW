@@ -50,7 +50,7 @@ async function callAigc(
   } catch (error) {
     const { code, detail } = fetchFailureOf(error);
     console.error("[generate] fetch failed", code || "(no code)", detail);
-    if (isConnectFailure(code)) {
+    if (isConnectFailure(code, detail)) {
       return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
     }
     // 连上了但没等到完整响应（对端断开、中途网络抖动等），把原因如实带出去

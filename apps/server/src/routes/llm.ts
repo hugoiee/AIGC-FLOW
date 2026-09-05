@@ -7,7 +7,13 @@ import {
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { getAppSettings } from "../db/settings";
-import { fetchFailureOf, isConnectFailure, messageOf, snippet } from "../lib/upstream";
+import {
+  fetchFailureOf,
+  isConnectFailure,
+  isTlsHandshakeFailure,
+  messageOf,
+  snippet,
+} from "../lib/upstream";
 
 /** 列模型是纯读操作，几百毫秒就该回来；卡住多半是地址指错了 */
 const MODELS_TIMEOUT_MS = 15_000;
@@ -51,6 +57,11 @@ function failureMessageOf(error: unknown, what: string, timeoutMs: number): stri
   }
   const { code, detail } = fetchFailureOf(error);
   console.error("[llm] fetch failed", code || "(no code)", detail);
+  if (isTlsHandshakeFailure(code, detail)) {
+    // 这三个原因都会长成同一个样子，而且都不是「服务挂了」，所以得一次列全：
+    // 只说「连不上」的话，用户会去 ping 一个其实活得好好的服务
+    return "和这个地址的 TLS 握手被中断。常见于出网要走代理 —— 服务端不读系统代理设置，浏览器能打开不代表这里能打开；也可能是防火墙拦了，或这个端口本来就不提供 HTTPS（内网服务多数是 http://）";
+  }
   if (isConnectFailure(code)) {
     return "连不上这个地址，确认服务在运行、地址和网络环境都对";
   }

@@ -49,7 +49,19 @@ export function fetchFailureOf(error: unknown): { code: string; detail: string }
   return { code, detail: snippet(detail) };
 }
 
-/** 没有 code 时也算「连不上」：信息不足时按最常见的原因报，比甩一句 fetch failed 强 */
-export function isConnectFailure(code: string): boolean {
-  return !code || CONNECT_ERROR_CODES.has(code);
+/**
+ * TLS 握手还没完成对端就断开了。Node 给的 code 是 ECONNRESET，
+ * 光看 code 会当成「连上了以后中途断」—— 但它其实发生在**建连阶段**，
+ * 两者的排查方向完全相反。判据只能是这句话本身。
+ */
+export function isTlsHandshakeFailure(code: string, detail: string): boolean {
+  return code === "ECONNRESET" && detail.includes("before secure TLS connection was established");
+}
+
+/**
+ * 没有 code 时也算「连不上」：信息不足时按最常见的原因报，比甩一句 fetch failed 强。
+ * TLS 握手期间断开同样算 —— 一个字节的应用数据都没走通，不是「中途」。
+ */
+export function isConnectFailure(code: string, detail = ""): boolean {
+  return !code || CONNECT_ERROR_CODES.has(code) || isTlsHandshakeFailure(code, detail);
 }
