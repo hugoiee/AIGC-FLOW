@@ -1,14 +1,17 @@
 "use client";
 
 import {
-  GPT_QUALITIES,
+  clampImageQuality,
   GPT_SIZE_PRESETS,
+  type GptQuality,
+  gptQualityLabelOf,
   gptSizeOf,
   IMAGE_GEN_NODE_TYPE,
   IMAGE_GEN_NODE_WIDTH,
   IMAGE_MODELS,
   type ImageGenNodeData,
   imageModelOf,
+  isGptImage,
   MAX_REFERENCE_IMAGES,
   NANO_ASPECT_RATIOS,
   NANO_IMAGE_SIZES,
@@ -63,7 +66,7 @@ import { PromptEditor, type PromptMediaRef, usePromptTokens } from "./prompt-edi
 
 /** 占位区的宽高比跟随当前选择的比例；gpt 的 auto 档没有具体比例，退回 16:9 */
 function currentAspect(gen: ImageGenNodeData): number {
-  if (gen.model === "gpt-image-2") {
+  if (isGptImage(gen.model)) {
     const preset = gptSizeOf(gen.sizePreset);
     return preset.width > 0 ? preset.width / preset.height : 16 / 9;
   }
@@ -442,9 +445,11 @@ function ReferenceChips({
  */
 function SizeSetting({ nodeId, gen }: { nodeId: string; gen: ImageGenNodeData }) {
   const { updateNodeData } = useReactFlow();
-  const isGpt = gen.model === "gpt-image-2";
+  const isGpt = isGptImage(gen.model);
+  // 质量档按模型给（2.5 比 2 多出超高 / 最高两档），不是所有 gpt 模型都一样
+  const qualities: readonly GptQuality[] = imageModelOf(gen.model).qualities;
   const label = isGpt
-    ? `${qualityLabel(gen.quality)} · ${gen.sizePreset}`
+    ? `${gptQualityLabelOf(gen.quality)} · ${gen.sizePreset}`
     : `${gen.aspectRatio} · ${gen.imageSize}`;
 
   return (
@@ -462,13 +467,13 @@ function SizeSetting({ nodeId, gen }: { nodeId: string; gen: ImageGenNodeData })
           <p className="text-muted-foreground text-xs">{isGpt ? "质量" : "分辨率"}</p>
           <div className="flex flex-wrap gap-2">
             {isGpt
-              ? GPT_QUALITIES.map(({ value, label: text }) => (
+              ? qualities.map((value) => (
                   <PillOption
                     key={value}
                     active={gen.quality === value}
                     onClick={() => updateNodeData(nodeId, { quality: value })}
                   >
-                    {text}
+                    {gptQualityLabelOf(value)}
                   </PillOption>
                 ))
               : NANO_IMAGE_SIZES.map((size) => (
@@ -537,24 +542,39 @@ function ModelSelect({ nodeId, gen }: { nodeId: string; gen: ImageGenNodeData })
           <ChevronDown className="opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      {/* 固定够宽，Nano Banana Pro 这类长名不换行 */}
-      <DropdownMenuContent align="end" className="min-w-48">
+      {/*
+        必须 w-auto：DropdownMenuContent 默认是 w-(--radix-dropdown-menu-trigger-width)
+        + overflow-x-hidden，宽度跟着触发按钮走、超出的部分**无声裁掉**（没有省略号）。
+        触发按钮是 text-[0.8rem] 而菜单项是 text-sm，选中短名（GPT Image 2）时按钮才 130px 上下，
+        "GPT Image 2.5 Sunburst" 这一项就会被切掉尾巴。w-auto 交回给内容撑，min-w 只当下限。
+      */}
+      <DropdownMenuContent align="end" className="w-auto min-w-56">
         <DropdownMenuLabel className="text-muted-foreground">图像模型</DropdownMenuLabel>
         {IMAGE_MODELS.map((item) => (
           <DropdownMenuItem
             key={item.id}
-            onSelect={() => updateNodeData(nodeId, { model: item.id })}
-            className={cn("whitespace-nowrap", item.id === gen.model && "bg-accent")}
+            // 质量档按模型收敛，和服务端调的是同一个 clampImageQuality：
+            // 不像视频那边把 clampVideoConfig 的规则又手抄了一遍在 onSelect 里
+            onSelect={() =>
+              updateNodeData(nodeId, {
+                model: item.id,
+                quality: clampImageQuality(item.id, gen.quality),
+              })
+            }
+            // items-start：带说明的项是两行，图标要对齐第一行而不是两行的中线
+            className={cn("items-start py-1.5", item.id === gen.model && "bg-accent")}
           >
-            <ModelIcon modelId={item.id} />
-            {item.label}
+            <ModelIcon modelId={item.id} className="mt-0.5" />
+            <div className="flex flex-col gap-0.5">
+              <span className="whitespace-nowrap">{item.label}</span>
+              {/* 只有需要区分擅长场景的版本才有 hint，用 in 收窄联合类型 */}
+              {"hint" in item && (
+                <span className="whitespace-nowrap text-muted-foreground text-xs">{item.hint}</span>
+              )}
+            </div>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function qualityLabel(quality: ImageGenNodeData["quality"]): string {
-  return { auto: "自动", high: "高", medium: "中", low: "低" }[quality];
 }

@@ -34,13 +34,26 @@
 右侧的功能面板都用 1/zoom 反向缩放，画布缩小时在屏幕上保持原大小。信息条的宽度
 按内容自适应、不跟节点宽度走（跟节点走的话缩小后名字和尺寸会被截光或挤出去），
 尺寸紧跟在名字后面靠左排。**编组暂不支持嵌套。**
-图像生成节点（GPT Image 2 / Nano Banana 2 / Nano Banana Pro）和视频生成节点
-（Seedance 2.0 / 2.5，参考图模式 + 首尾帧模式）都已接入内网 `/aigc`：
+图像生成节点（GPT Image 2、GPT Image 2.5 Flare / Sunburst、Nano Banana 2 / Pro）
+和视频生成节点（Seedance 2.0 / 2.5，参考图模式 + 首尾帧模式）都已接入内网 `/aigc`：
 左侧 target 连参考素材（媒体节点或其他生成节点的结果，按图/视频/音频分流到
 image_list / video_list / audio_list），结果显示在节点上方，右侧 source 可被
 下游引用；`generating` 状态不落盘。版本/模式相关的参数收敛统一在 shared 的
-`clampVideoConfig`。**首尾帧模式的 mode 值是占位的 `first_last_frame`**，
-接口文档没写明，内网联调后改 `packages/shared/src/video-gen.ts` 一处即可。
+`clampVideoConfig` / `clampImageConfig`。**首尾帧模式的 mode 值是占位的
+`first_last_frame`**，接口文档没写明，内网联调后改
+`packages/shared/src/video-gen.ts` 一处即可。
+图像模型分两家，config 形状不同：gpt 家族（2 与 2.5 两个版本）发 `size` / `n` /
+`quality`，nano 系发 `aspect_ratio` / `image_size`。**判家族一律用 `isGptImage()`，
+不要写 `=== "gpt-image-2"`** —— 那种写法在 gpt 家族多出成员时会**静默**走错分支
+（参数按 nano 的形状发出去、节点占位比例读错字段、设置弹层显示成 nano 的分辨率档、
+图标变成 nano 的星星），接 2.5 时前后端四处全踩了一遍。质量档只有 2.5 支持
+`xhigh` / `max`，按模型挂在 `IMAGE_MODELS[].qualities` 上（同 `VIDEO_VERSIONS`
+把能力当数据挂在版本对象上），切模型时和发请求前调的是同一个 `clampImageQuality`
+—— 不像视频那边前端把 `clampVideoConfig` 的规则又手抄了一份在 `onSelect` 里。
+尺寸档 12 档两代 gpt 共用（宽高都能被 16 整除、宽高比在 1:3 ~ 3:1 内，满足 2.5 的约束）。
+**2.5 两个版本的 `model_name` / `version` 同样是占位值**，接口文档没写，
+按 gpt-image-2 的写法取了 OpenAI 的模型 id，联调后改
+`packages/shared/src/image-gen.ts` 一处即可。
 上传和生成接口都要求 req_from（设置面板里填），不填服务端直接拒绝。
 文本节点（Textarea）连给生成节点后在 prompt 里显示为琥珀色徽章（显示节点名，
 悬停看正文；和三种素材徽章的绿 / 蓝 / 紫区分开）：prompt 存
@@ -399,6 +412,9 @@ export type AppType = typeof app;
   节点。prompt 里的徽章 token 指向的是上游节点 id，上游没变所以原样有效。多选工具条的批量下载阈值
   （`SELECTION_TOOLBAR_MIN = 2`）不要动 —— 排布、编组那几个按钮对单个节点没意义。
 - 首尾帧模式的 mode 取值待内网联调确认（当前占位 first_last_frame）。
+- 图像 2.5 的 model_name / version 取值待内网联调确认（当前占位 gpt-image-2.5-flare
+  / gpt-image-2.5-sunburst）；`xhigh` / `max` 两个质量档会不会被内网网关按白名单
+  挡掉，以及 2.5 是否仍吃 `n`，一并在联调时确认。
 - 桌面端的代码签名 / 公证 / 自动更新（现在全不做，未签名包首次打开要手动放行）。
 - 本地调试没有内网时，可用一个 mock `/aigc` 服务替代（POST 返回
   `{result:{content:[url],status:"success"}}`），把设置面板的生成地址指过去即可。

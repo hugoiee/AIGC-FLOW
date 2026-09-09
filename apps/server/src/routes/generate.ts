@@ -1,4 +1,5 @@
 import {
+  clampImageConfig,
   clampVideoConfig,
   generateImageRequestSchema,
   generateVideoRequestSchema,
@@ -108,7 +109,8 @@ function recordGeneration(
 
 export const generateRoute = new Hono()
   .post("/", zValidator("json", generateImageRequestSchema), async (c) => {
-    const input = c.req.valid("json");
+    // 质量档等模型相关的约束统一在 shared 的 clampImageConfig 里收敛（同视频那条）
+    const input = clampImageConfig(c.req.valid("json"));
     const { generateUrl, reqFrom } = getAppSettings();
 
     if (!reqFrom) {
@@ -119,9 +121,10 @@ export const generateRoute = new Hono()
     }
 
     const model = imageModelOf(input.model);
-    // 两家模型的 config 形状不同：gpt 是 size/n/quality，nano 是 aspect_ratio/image_size
+    // 两家模型的 config 形状不同：gpt 家族是 size/n/quality，nano 是 aspect_ratio/image_size。
+    // 按 family 分流，别按具体 model id —— gpt 家族现在有三个成员
     const config =
-      input.model === "gpt-image-2"
+      model.family === "gpt"
         ? { size: gptSizeOf(input.sizePreset).size, n: 1, quality: input.quality }
         : { aspect_ratio: input.aspectRatio, image_size: input.imageSize };
 
