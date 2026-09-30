@@ -13,14 +13,14 @@ import { defineConfig } from "tsup";
 const EXTERNAL = ["electron", "better-sqlite3"];
 
 export default defineConfig({
-  entry: ["src/main.ts"],
+  entry: ["src/main.ts", "src/preload.ts"],
   // CJS：better-sqlite3 是 CJS，且 Electron 的 asar 钩子接的是 require()
   format: ["cjs"],
   platform: "node",
   target: "node22",
   outDir: "dist",
   outExtension: () => ({ js: ".cjs" }),
-  clean: true,
+  clean: false,
   sourcemap: true,
   external: EXTERNAL,
   // tsup 默认把 package.json 的 dependencies 全部 external，不覆盖掉的话产物就是个空壳

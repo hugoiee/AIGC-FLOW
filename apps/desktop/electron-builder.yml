@@ -18,6 +18,7 @@ afterPack: build/prune-prebuilds.cjs
 
 files:
   - "dist/**/*.cjs"
+  - "!dist/tests/**"
   - "package.json"
   # 8 个平台的 prebuild 都先带上，多余的那 7 个由 afterPack 按真实目标平台删掉。
   # 别想在这里用 ${platform} 宏裁 —— 它给的是构建主机的平台，会往 win 包里塞 darwin 的 .node。

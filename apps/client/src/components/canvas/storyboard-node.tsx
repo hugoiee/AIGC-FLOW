@@ -9,7 +9,9 @@ import { type NodeProps, NodeResizer, useReactFlow, useStore } from "@xyflow/rea
 import { Table2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { beginDesktopTask } from "@/lib/desktop-tasks";
 import { cn } from "@/lib/utils";
 import { GEN_ACCENT } from "./gen-node-controls";
 import { NodeInfoBar } from "./node-info-bar";
@@ -33,6 +35,7 @@ const RESIZE_HANDLE_STYLE = {
  * 逐行建生成节点、整表当 text 连出去这些以后再接。
  */
 export function StoryboardNode({ id, data, selected }: NodeProps) {
+  const { projectId } = useCanvasActions();
   const board = data as unknown as StoryboardNodeData;
   const { updateNodeData } = useReactFlow();
   // 信息条要在屏幕上保持固定大小；没选中时没有信息条，返回常量免得跟着缩放重渲
@@ -73,6 +76,7 @@ export function StoryboardNode({ id, data, selected }: NodeProps) {
     if (rows.length === 0) return;
 
     setGenerating(rowId ?? "all");
+    const finish = beginDesktopTask(projectId);
     try {
       const res = await api.api.storyboard["performance-prompts"].$post({
         json: {
@@ -116,6 +120,7 @@ export function StoryboardNode({ id, data, selected }: NodeProps) {
     } catch {
       toast.error("生成表演 Prompt 失败", { description: "连不上服务，确认 server 已启动" });
     } finally {
+      finish();
       setGenerating(null);
     }
   }

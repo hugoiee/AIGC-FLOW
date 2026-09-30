@@ -13,6 +13,7 @@ import {
 import type { Node, XYPosition } from "@xyflow/react";
 import { useCallback } from "react";
 import { toast } from "sonner";
+import { beginDesktopTask } from "@/lib/desktop-tasks";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -67,7 +68,12 @@ function measureLocalMedia(file: File, kind: MediaKind): Promise<PixelSize | nul
 
   return new Promise((resolve) => {
     const objectUrl = URL.createObjectURL(file);
+    let finished = false;
+    const timeout = setTimeout(() => settle(null), 10_000);
     const settle = (size: PixelSize | null) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
       URL.revokeObjectURL(objectUrl);
       resolve(size && size.width > 0 && size.height > 0 ? size : null);
     };
@@ -120,6 +126,7 @@ async function uploadOne(file: File): Promise<UploadOutcome> {
 }
 
 type UseMediaUploadArgs = {
+  projectId: number;
   /** 先把占位节点放上画布 */
   onNodesCreated: (nodes: Node[]) => void;
   /**
@@ -129,7 +136,7 @@ type UseMediaUploadArgs = {
   onNodeSettled: (nodeId: string, patch: Partial<MediaNodeData>, size?: PixelSize) => void;
 };
 
-export function useMediaUpload({ onNodesCreated, onNodeSettled }: UseMediaUploadArgs) {
+export function useMediaUpload({ projectId, onNodesCreated, onNodeSettled }: UseMediaUploadArgs) {
   return useCallback(
     (files: File[], origin: XYPosition) => {
       if (files.length === 0) return;
@@ -140,10 +147,11 @@ export function useMediaUpload({ onNodesCreated, onNodeSettled }: UseMediaUpload
       files.forEach((file, index) => {
         const node = pending[index];
         if (!node) return;
+        const finish = beginDesktopTask(projectId);
 
         // 量尺寸和上传并行：本地解码很快，节点能先于上传完成就落到正确比例
         const kind = mediaKindOf(file.type, file.name) ?? "image";
-        void measureLocalMedia(file, kind).then((size) => {
+        const measured = measureLocalMedia(file, kind).then((size) => {
           if (!size) return;
           onNodeSettled(
             node.id,
@@ -152,7 +160,7 @@ export function useMediaUpload({ onNodesCreated, onNodeSettled }: UseMediaUpload
           );
         });
 
-        void uploadOne(file).then((outcome) => {
+        const uploaded = uploadOne(file).then((outcome) => {
           if (!outcome.ok) {
             toast.error(`「${file.name}」上传失败`, { description: outcome.error });
           }
@@ -163,8 +171,9 @@ export function useMediaUpload({ onNodesCreated, onNodeSettled }: UseMediaUpload
               : { status: "error", error: outcome.error },
           );
         });
+        void Promise.allSettled([measured, uploaded]).then(finish);
       });
     },
-    [onNodesCreated, onNodeSettled],
+    [projectId, onNodesCreated, onNodeSettled],
   );
 }

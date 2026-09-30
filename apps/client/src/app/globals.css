@@ -4,6 +4,206 @@
 
 @custom-variant dark (&:is(.dark *));
 
+:root {
+  --desktop-titlebar: #e5e5e5;
+  --desktop-tab-inactive: #d4d4d4;
+  --desktop-tab-hover: #e0e0e0;
+  --desktop-tab-divider: #bdbdbd;
+  --desktop-canvas: #f5f5f5;
+}
+.dark {
+  --desktop-titlebar: #505050;
+  --desktop-tab-inactive: #414141;
+  --desktop-tab-hover: #494949;
+  --desktop-tab-divider: #606060;
+  --desktop-canvas: #141414;
+}
+.desktop-workspace {
+  height: 100dvh;
+  overflow: hidden;
+}
+.desktop-titlebar {
+  display: flex;
+  height: 48px;
+  align-items: center;
+  user-select: none;
+  background: var(--desktop-titlebar);
+  -webkit-app-region: drag;
+}
+.desktop-titlebar:not([data-platform="darwin"]) {
+  padding-right: calc(100% - env(titlebar-area-width, calc(100% - 138px)));
+}
+.desktop-titlebar[data-fullscreen="true"] {
+  padding-right: 0;
+}
+.desktop-control {
+  -webkit-app-region: no-drag;
+}
+.desktop-native-space {
+  width: 96px;
+  height: 48px;
+  flex-shrink: 0;
+  background: var(--desktop-tab-inactive);
+  border-right: 1px solid var(--desktop-tab-divider);
+  border-bottom: 1px solid var(--desktop-tab-divider);
+}
+.desktop-home {
+  display: flex;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--desktop-tab-inactive);
+  border-right: 1px solid var(--desktop-tab-divider);
+  border-bottom: 1px solid var(--desktop-tab-divider);
+  cursor: pointer;
+}
+.desktop-home.is-active {
+  background: var(--background);
+  border-bottom-color: transparent;
+}
+.desktop-home:hover:not(.is-active) {
+  background: var(--desktop-tab-hover);
+}
+.desktop-home-icon,
+.desktop-project-icon {
+  display: block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+}
+.desktop-home-icon {
+  width: 18px;
+  height: 18px;
+  mask-image: url("/desktop/home.svg");
+}
+.desktop-project-icon {
+  width: 16px;
+  height: 16px;
+  mask-image: url("/desktop/project.svg");
+  color: var(--muted-foreground);
+}
+.desktop-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.desktop-tabs::-webkit-scrollbar {
+  display: none;
+}
+.desktop-tab {
+  display: flex;
+  position: relative;
+  align-items: center;
+  flex: 0 0 208px;
+  min-width: 0;
+  height: 48px;
+  padding-right: 12px;
+  background: var(--desktop-tab-inactive);
+  border-right: 1px solid var(--desktop-tab-divider);
+  border-bottom: 1px solid var(--desktop-tab-divider);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.desktop-tab:hover {
+  background: var(--desktop-tab-hover);
+}
+.desktop-tab.is-active {
+  background: var(--desktop-canvas);
+  border-bottom-color: transparent;
+  color: var(--foreground);
+  font-weight: 500;
+}
+.desktop-tab.is-dragging {
+  opacity: 0.35;
+}
+.desktop-tab-select {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding-left: 12px;
+  padding-right: 8px;
+  cursor: pointer;
+}
+.desktop-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.desktop-tab:is(:hover, :focus-within, .is-active) .desktop-tab-close {
+  opacity: 1;
+}
+.desktop-tab-close:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.desktop-titlebar button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -3px;
+}
+.desktop-titlebar button:disabled {
+  cursor: default;
+}
+.desktop-tab.drop-before::before,
+.desktop-tab.drop-after::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #3b82f6;
+  z-index: 1;
+}
+.desktop-tab.drop-before::before {
+  left: 0;
+}
+.desktop-tab.drop-after::after {
+  right: 0;
+}
+.desktop-window-drag {
+  height: 48px;
+  min-width: 80px;
+  flex: 1;
+  border-bottom: 1px solid var(--desktop-tab-divider);
+}
+.desktop-content {
+  position: relative;
+  height: calc(100dvh - 48px);
+}
+.desktop-panel {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+.desktop-panel[data-active="false"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.desktop-content .h-dvh {
+  height: 100%;
+}
+.desktop-content .min-h-dvh {
+  min-height: 100%;
+}
+@media (max-width: 1100px) {
+  .desktop-tab {
+    flex-basis: 144px;
+  }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);
