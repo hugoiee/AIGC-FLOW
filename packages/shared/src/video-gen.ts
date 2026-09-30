@@ -21,8 +21,8 @@ export const VIDEO_VERSIONS = [
     id: "seedance-2.5",
     label: "Seedance 2.5",
     apiVersion: "doubao-seedance-2-5-260628",
-    resolutions: ["480p", "720p"],
-    defaultResolution: "720p",
+    resolutions: ["480p", "720p", "1080p"],
+    defaultResolution: "1080p",
     maxDuration: 30,
   },
 ] as const;
