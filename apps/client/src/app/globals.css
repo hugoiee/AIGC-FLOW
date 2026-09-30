@@ -189,6 +189,8 @@
   overflow: auto;
 }
 .desktop-panel[data-active="false"] {
+  /* React Flow nodes set visibility: visible; opacity hides the entire subtree without changing measurements. */
+  opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }

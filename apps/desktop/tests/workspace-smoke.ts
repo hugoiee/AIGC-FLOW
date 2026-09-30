@@ -3,6 +3,13 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
+import {
+  DEFAULT_IMAGE_GEN_DATA,
+  DEFAULT_VIDEO_GEN_DATA,
+  IMAGE_GEN_NODE_TYPE,
+  type ProjectGraph,
+  VIDEO_GEN_NODE_TYPE,
+} from "@aigc-flow/shared";
 import { app, type BrowserWindow, dialog, nativeTheme } from "electron";
 import { createProjectWindow } from "../src/project-view";
 import { protectWindowClose } from "../src/tab-close";
@@ -21,16 +28,34 @@ const projects = names.map((name, index) => ({
   createdAt: "2026-09-30T12:00:00Z",
   updatedAt: "2026-09-30T12:00:00Z",
 }));
-const graphs = new Map(
+const graphs = new Map<number, ProjectGraph>(
   projects.map((project) => [
     project.id,
     {
-      nodes: [] as Array<{ data: { status?: string } }>,
+      nodes: [],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
     },
   ]),
 );
+graphs.set(3, {
+  nodes: [
+    {
+      id: "visibility-video",
+      type: VIDEO_GEN_NODE_TYPE,
+      position: { x: 160, y: 180 },
+      data: { ...DEFAULT_VIDEO_GEN_DATA },
+    },
+    {
+      id: "visibility-image",
+      type: IMAGE_GEN_NODE_TYPE,
+      position: { x: 780, y: 180 },
+      data: { ...DEFAULT_IMAGE_GEN_DATA },
+    },
+  ],
+  edges: [],
+  viewport: { x: 0, y: 0, zoom: 1 },
+});
 let rejectWrites = false;
 let releaseGeneration: (() => void) | undefined;
 let generationPending = false;
@@ -138,6 +163,27 @@ async function snapshot(name: string) {
   writeFileSync(join(artifacts, name), (await window.capturePage()).toPNG());
 }
 
+// Compare rendered pixels, rather than just checking the parent panel's CSS.
+async function panelPixels() {
+  await new Promise((done) => setTimeout(done, 150));
+  return Promise.all(
+    [300, 1040].map(async (x) =>
+      (await window.capturePage({ x, y: 320, width: 8, height: 8 })).toBitmap(),
+    ),
+  );
+}
+function assertPanelPixels(before: Buffer[], after: Buffer[], message: string) {
+  assert.equal(
+    before.every((pixels, index) => pixels.equals(after[index] ?? Buffer.alloc(0))),
+    true,
+    message,
+  );
+}
+const mediaLayout = () =>
+  run<string>(`JSON.stringify([...document.querySelectorAll('${panel(3)} .react-flow__node')].map(n=>{
+  const r=n.getBoundingClientRect();return {id:n.dataset.id,x:r.x,y:r.y,width:r.width,height:r.height};
+}))`);
+
 void app
   .whenReady()
   .then(async () => {
@@ -164,6 +210,10 @@ void app
       await wait(() => nativeTheme.themeSource === "system", "system appearance remains enabled");
       if (await run<boolean>("document.documentElement.classList.contains('dark')"))
         await click(`${panel(1)} [aria-label="切换为浅色"]`);
+      await click('[aria-label="项目首页"]');
+      await run("document.fonts.ready.then(() => true)");
+      const homePixels = await panelPixels();
+      await tab(names[0] ?? "");
       await addText(1);
       await click(`${panel(1)} .react-flow__node`);
       await click(`${panel(1)} [aria-label="放大"]`);
@@ -178,7 +228,39 @@ void app
       );
       await wait(async () => (await count(2)) === 0, "active undo");
       assert.equal(await count(1), 1);
+      const otherProjectPixels = await panelPixels();
       await open(3);
+      await wait(
+        () =>
+          run<boolean>(
+            `document.querySelectorAll('${panel(3)} .react-flow__node').length===2 && [...document.querySelectorAll('${panel(3)} .react-flow__node')].every(n=>getComputedStyle(n).visibility==='visible')`,
+          ),
+        "media nodes measured and visible",
+      );
+      const layout = await mediaLayout();
+      await click('[aria-label="项目首页"]');
+      await snapshot("home-after-media.png");
+      assertPanelPixels(
+        homePixels,
+        await panelPixels(),
+        "inactive media nodes must not paint over Home",
+      );
+      assert.equal(await mediaLayout(), layout, "hidden media nodes keep their layout dimensions");
+      await tab(names[1] ?? "");
+      assertPanelPixels(
+        otherProjectPixels,
+        await panelPixels(),
+        "inactive media nodes must not paint over another project",
+      );
+      await tab(names[2] ?? "");
+      assert.equal(
+        await mediaLayout(),
+        layout,
+        "returning to media project preserves node positions",
+      );
+      console.log(
+        "PASS media canvas does not paint over Home or other projects; layout survives switching",
+      );
       await tab(names[0] ?? "");
       assert.equal(
         await run(`document.querySelector('${panel(1)} .react-flow__viewport').style.transform`),
