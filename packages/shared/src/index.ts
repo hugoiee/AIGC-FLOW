@@ -1,4 +1,5 @@
 export * from "./clipboard";
+export * from "./desktop";
 export * from "./graph";
 export * from "./image-gen";
 export * from "./llm";

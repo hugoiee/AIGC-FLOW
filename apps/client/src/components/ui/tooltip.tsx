@@ -2,6 +2,8 @@
 
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 import type * as React from "react";
+import { useContext } from "react";
+import { CanvasPortalContext } from "@/lib/desktop";
 
 import { cn } from "@/lib/utils";
 
@@ -32,8 +34,9 @@ function TooltipContent({
   children,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  const container = useContext(CanvasPortalContext);
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={container}>
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}

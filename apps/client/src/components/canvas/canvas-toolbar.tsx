@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SaveStatus } from "@/hooks/use-graph-autosave";
+import { useDesktopWorkspace } from "@/lib/desktop";
 import type { MarkSummary } from "@/lib/node-mark";
 import { cn } from "@/lib/utils";
 
@@ -73,12 +74,21 @@ export function CanvasInfoGroup({
   marks,
   onSelectByMark,
 }: CanvasInfoGroupProps) {
+  const workspace = useDesktopWorkspace();
   return (
     <div className={GROUP}>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button asChild variant="ghost" size="icon">
-            <Link href="/" aria-label="返回项目列表">
+            <Link
+              href="/"
+              aria-label="返回项目列表"
+              onClick={(event) => {
+                if (!workspace) return;
+                event.preventDefault();
+                workspace.activate(null);
+              }}
+            >
               <ChevronLeft />
             </Link>
           </Button>

@@ -50,6 +50,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { beginDesktopTask } from "@/lib/desktop-tasks";
 import { downloadItemOf } from "@/lib/download";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { nodeMarkOf } from "@/lib/node-mark";
@@ -147,6 +148,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
       mark: undefined,
     });
 
+    const finish = beginDesktopTask(projectId);
     try {
       const res = await api.api.generate.video.$post({
         json: {
@@ -177,6 +179,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
     } catch {
       toast.error("视频生成失败", { description: "连不上服务，确认 server 已启动" });
       updateNodeData(id, { status: "error", error: "连不上服务，确认 server 已启动" });
+    } finally {
+      finish();
     }
   }
 

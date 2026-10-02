@@ -40,6 +40,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { beginDesktopTask } from "@/lib/desktop-tasks";
 import { downloadItemOf } from "@/lib/download";
 import { CANVAS_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
 import { nodeMarkOf } from "@/lib/node-mark";
@@ -123,6 +124,7 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
       mark: undefined,
     });
 
+    const finish = beginDesktopTask(projectId);
     try {
       const res = await api.api.generate.$post({
         json: {
@@ -151,6 +153,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
     } catch {
       toast.error("图像生成失败", { description: "连不上服务，确认 server 已启动" });
       updateNodeData(id, { status: "error", error: "连不上服务，确认 server 已启动" });
+    } finally {
+      finish();
     }
   }
 

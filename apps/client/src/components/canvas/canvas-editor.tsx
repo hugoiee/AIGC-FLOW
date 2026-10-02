@@ -42,6 +42,7 @@ import { type DragEvent, useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CanvasActionsProvider } from "@/hooks/use-canvas-actions";
+import { useDesktopProject } from "@/hooks/use-desktop-project";
 import { useGraphAutosave } from "@/hooks/use-graph-autosave";
 import { useCanvasShortcuts, useGraphHistory } from "@/hooks/use-graph-history";
 import { useMediaUpload } from "@/hooks/use-media-upload";
@@ -164,6 +165,7 @@ type CanvasEditorProps = {
   initialViewport: Viewport;
   initialGraph: ProjectGraph;
   onRename: (name: string) => Promise<void>;
+  waitForMetadata?: () => Promise<void>;
 };
 
 export function CanvasEditor({
@@ -173,6 +175,7 @@ export function CanvasEditor({
   initialViewport,
   initialGraph,
   onRename,
+  waitForMetadata,
 }: CanvasEditorProps) {
   const [mode, setMode] = useState<CanvasMode>("select");
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -193,13 +196,18 @@ export function CanvasEditor({
   edgesRef.current = edges;
 
   const history = useGraphHistory({ nodes: initialNodes, edges: initialEdges });
-  const { status } = useGraphAutosave({
+  const { status, saveNow } = useGraphAutosave({
     projectId: project.id,
     nodes,
     edges,
     getViewport,
     initialGraph,
   });
+  const saveProject = useCallback(async () => {
+    await waitForMetadata?.();
+    return saveNow();
+  }, [waitForMetadata, saveNow]);
+  const activeProject = useDesktopProject(project.id, project.name, status, saveProject);
 
   /** 一次完整操作结束，把结果推进历史 */
   const commitNow = useCallback(
@@ -736,6 +744,7 @@ export function CanvasEditor({
   );
 
   const startUpload = useMediaUpload({
+    projectId: project.id,
     onNodesCreated: handleUploadNodesCreated,
     onNodeSettled: handleUploadNodeSettled,
   });
@@ -770,14 +779,17 @@ export function CanvasEditor({
 
   const isMove = mode === "move";
 
-  useCanvasShortcuts({
-    onUndo: () => applySnapshot(history.undo()),
-    onRedo: () => applySnapshot(history.redo()),
-    onCopy: handleCopy,
-    onPaste: handlePaste,
-    onSelectMode: () => setMode("select"),
-    onMoveMode: () => setMode("move"),
-  });
+  useCanvasShortcuts(
+    {
+      onUndo: () => applySnapshot(history.undo()),
+      onRedo: () => applySnapshot(history.redo()),
+      onCopy: handleCopy,
+      onPaste: handlePaste,
+      onSelectMode: () => setMode("select"),
+      onMoveMode: () => setMode("move"),
+    },
+    activeProject,
+  );
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -873,7 +885,7 @@ export function CanvasEditor({
             maxZoom={2}
             // 右下角的 React Flow 角标不要
             proOptions={{ hideAttribution: true }}
-            deleteKeyCode={["Backspace", "Delete"]}
+            deleteKeyCode={activeProject ? ["Backspace", "Delete"] : null}
             multiSelectionKeyCode={["Meta", "Shift"]}
             // 选择模式：左键框选，平移让给中键（右键留给节点选择菜单），节点可拖
             // 移动模式：左键平移，节点不可拖（拖节点也是平移），语义对齐 Figma 的抓手

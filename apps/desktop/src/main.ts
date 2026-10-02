@@ -1,10 +1,13 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, Menu } from "electron";
 import { autoSaveDownloads } from "./downloads";
 import { listenWithFallback } from "./listen";
 import { initLog } from "./log";
+import { createProjectWindow } from "./project-view";
 import { migrationsFolder, webRoot } from "./resources";
 import { createShell } from "./shell";
+import { protectWindowClose } from "./tab-close";
+import { installDesktopWindowApi } from "./tabs";
 
 /**
  * 桌面端固定端口。
@@ -35,6 +38,7 @@ const LOG_FILE = initLog(USER_DATA);
 app.setAppUserModelId("com.aigcflow.desktop");
 
 let mainWindow: BrowserWindow | null = null;
+let quitRequested = false;
 /** 退出时要收尾的两样东西，will-quit 里用 */
 let teardown: { closeServer: (done: () => void) => void; closeDb: () => void } | null = null;
 
@@ -141,39 +145,29 @@ async function bootServer(): Promise<number> {
 }
 
 function createWindow(port: number) {
-  const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 960,
-    minHeight: 600,
-    title: "AIGC-FLOW",
-    backgroundColor: "#f5f5f5",
-    webPreferences: { contextIsolation: true, sandbox: true },
+  const win = createProjectWindow();
+  installDesktopWindowApi(win);
+  protectWindowClose(win, () => {
+    quitRequested = false;
   });
-
-  /**
-   * 画布未保存时 use-graph-autosave 会在 beforeunload 里 preventDefault()。
-   * 浏览器会拿它弹确认框，但 Electron 不弹任何东西、只是静默拒绝关闭 ——
-   * 表现就是「有改动时点关闭 / ⌘Q 完全没反应」，用户只能强制退出。
-   *
-   * ⚠️ 这个事件上 event.preventDefault() 的语义是反的：它表示
-   * 「忽略页面的阻止、放行关闭」。
-   */
-  win.webContents.on("will-prevent-unload", (event) => {
-    const choice = dialog.showMessageBoxSync(win, {
-      type: "question",
-      buttons: ["离开", "留下"],
-      defaultId: 1,
-      cancelId: 1,
-      message: "画布还有未保存的更改",
-      detail: "现在退出会丢掉这些更改。",
-    });
-    if (choice === 0) event.preventDefault();
+  win.on("closed", () => {
+    mainWindow = null;
+    if (quitRequested) app.quit();
   });
-
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event, target) => {
+    if (new URL(target).origin !== `http://127.0.0.1:${port}`) event.preventDefault();
+  });
   win.loadURL(`http://127.0.0.1:${port}/`);
   return win;
 }
+
+app.on("before-quit", (event) => {
+  if (!mainWindow) return;
+  event.preventDefault();
+  quitRequested = true;
+  mainWindow.close();
+});
 
 app
   .whenReady()
@@ -182,6 +176,25 @@ app
     // 必须在 app ready 之后：defaultSession 这时才存在
     autoSaveDownloads();
     mainWindow = createWindow(port);
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+        {
+          label: "文件",
+          submenu: [
+            {
+              label: "关闭项目标签",
+              accelerator: "CmdOrCtrl+W",
+              click: () => mainWindow?.webContents.send("desktop:tab-shortcut", "close"),
+            },
+            { role: "quit" },
+          ],
+        },
+        { role: "editMenu" },
+        { label: "视图", submenu: [{ role: "toggleDevTools" }, { role: "togglefullscreen" }] },
+        { role: "windowMenu" },
+      ]),
+    );
 
     // macOS 的惯例：图标还在 dock 上时点一下要能把窗口叫回来
     app.on("activate", () => {
