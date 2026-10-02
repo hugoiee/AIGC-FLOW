@@ -38,7 +38,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { useTheme } from "next-themes";
-import { type DragEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type DragEvent, memo, useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CanvasActionsProvider } from "@/hooks/use-canvas-actions";
@@ -148,14 +148,14 @@ function floatLinePath({ from, to }: FloatLine): string {
 // 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点和连线
 const EDGE_TYPES = { default: AnimatedEdge };
 
-// 必须定义在组件外：每次 render 都新建对象会让 React Flow 反复重建所有节点
+// 类型表和 memo 包装都保持稳定，画布更新时只重渲染 props / 订阅真正变化的节点。
 const NODE_TYPES = {
-  [MEDIA_NODE_TYPE]: MediaNode,
-  [GROUP_NODE_TYPE]: GroupNode,
-  [IMAGE_GEN_NODE_TYPE]: ImageGenNode,
-  [VIDEO_GEN_NODE_TYPE]: VideoGenNode,
-  [TEXT_NODE_TYPE]: TextNode,
-  [STORYBOARD_NODE_TYPE]: StoryboardNode,
+  [MEDIA_NODE_TYPE]: memo(MediaNode),
+  [GROUP_NODE_TYPE]: memo(GroupNode),
+  [IMAGE_GEN_NODE_TYPE]: memo(ImageGenNode),
+  [VIDEO_GEN_NODE_TYPE]: memo(VideoGenNode),
+  [TEXT_NODE_TYPE]: memo(TextNode),
+  [STORYBOARD_NODE_TYPE]: memo(StoryboardNode),
 };
 
 type CanvasEditorProps = {
@@ -196,6 +196,7 @@ export function CanvasEditor({
   edgesRef.current = edges;
 
   const history = useGraphHistory({ nodes: initialNodes, edges: initialEdges });
+  const { commit: commitHistory } = history;
   const { status, saveNow } = useGraphAutosave({
     projectId: project.id,
     nodes,
@@ -211,9 +212,8 @@ export function CanvasEditor({
 
   /** 一次完整操作结束，把结果推进历史 */
   const commitNow = useCallback(
-    (nextNodes: Node[], nextEdges: Edge[]) =>
-      history.commit({ nodes: nextNodes, edges: nextEdges }),
-    [history],
+    (nextNodes: Node[], nextEdges: Edge[]) => commitHistory({ nodes: nextNodes, edges: nextEdges }),
+    [commitHistory],
   );
 
   const applySnapshot = useCallback(

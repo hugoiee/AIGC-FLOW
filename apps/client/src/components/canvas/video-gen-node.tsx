@@ -86,7 +86,6 @@ function currentAspect(gen: VideoGenNodeData): number {
 export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
-  const zoom = useStore((state) => state.transform[2]);
   const { activeNodeId, dropTargetId, setNodeMark, duplicateNode, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
@@ -94,6 +93,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const mark = nodeMarkOf({ type: VIDEO_GEN_NODE_TYPE, data });
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
+  // 信息条、标记角标和拖线落点都保持屏幕尺寸，其余节点无需订阅倍率。
+  const zoom = useStore((state) => (selected || mark || isDropTarget ? state.transform[2] : 1));
 
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));

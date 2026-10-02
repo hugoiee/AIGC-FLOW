@@ -4,7 +4,7 @@ import type { ProjectGraph } from "@aigc-flow/shared";
 import type { Edge, Node, Viewport } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { isSameGraph, toPersistedGraph } from "@/lib/graph";
+import { hasGraphContentChanges, isSameGraph, toPersistedGraph } from "@/lib/graph";
 import { SaveQueue } from "@/lib/save-queue";
 
 export type SaveStatus = "saved" | "dirty" | "saving" | "error";
@@ -26,6 +26,7 @@ export function useGraphAutosave({
   const read = useRef(() => toPersistedGraph(nodes, edges, getViewport()));
   read.current = () => toPersistedGraph(nodes, edges, getViewport());
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const previous = useRef<{ nodes: Node[]; edges: Edge[] } | undefined>(undefined);
   const [queue] = useState(
     () =>
       new SaveQueue(
@@ -47,16 +48,24 @@ export function useGraphAutosave({
     return queue.flush();
   }, [queue]);
   useEffect(() => {
+    const before = previous.current;
+    previous.current = { nodes, edges };
+    // 选中态和自动测量不会取消正在等待的保存，也不会把画布误标成未保存。
+    if (before && !hasGraphContentChanges(before, { nodes, edges })) return;
     clearTimeout(timer.current);
     if (queue.saving) return;
-    if (isSameGraph(toPersistedGraph(nodes, edges, getViewport()), queue.saved)) {
-      setStatus("saved");
-      return;
-    }
-    setStatus("dirty");
+    // 先保护未保存内容；完整快照和深比较只在防抖后由队列执行。
+    // 首次挂载也检查一次加载时的归一化，但不提前显示 dirty。
+    if (before) setStatus("dirty");
     timer.current = setTimeout(() => void saveNow(), 800);
-    return () => clearTimeout(timer.current);
-  }, [nodes, edges, getViewport, queue, saveNow]);
+  }, [nodes, edges, queue, saveNow]);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      previous.current = undefined;
+    },
+    [],
+  );
   useEffect(() => {
     if (status === "saved") return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();

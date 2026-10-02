@@ -31,6 +31,53 @@ function isPersistable(node: Node): boolean {
 }
 
 /**
+ * 高频交互只检查可能落盘的字段，不展开 data、构造快照或序列化整张图。
+ * React Flow 不可变更新 data，所以引用相同就能跳过提示词和分镜等大块内容。
+ * 这里只做保守的变更判断；防抖后的完整比较负责过滤生成状态归一化等无效改动。
+ */
+export function hasGraphContentChanges(
+  previous: { nodes: Node[]; edges: Edge[] },
+  next: { nodes: Node[]; edges: Edge[] },
+): boolean {
+  if (previous.nodes.length !== next.nodes.length || previous.edges.length !== next.edges.length) {
+    return true;
+  }
+  return (
+    (previous.nodes !== next.nodes &&
+      next.nodes.some((node, index) => {
+        const before = previous.nodes[index];
+        if (node === before) return false;
+        return (
+          !before ||
+          node.id !== before.id ||
+          node.type !== before.type ||
+          node.data !== before.data ||
+          node.position.x !== before.position.x ||
+          node.position.y !== before.position.y ||
+          node.parentId !== before.parentId ||
+          (node.extent === "parent") !== (before.extent === "parent") ||
+          (SIZED_NODE_TYPES.has(node.type ?? "") &&
+            (node.width !== before.width || node.height !== before.height))
+        );
+      })) ||
+    (previous.edges !== next.edges &&
+      next.edges.some((edge, index) => {
+        const before = previous.edges[index];
+        if (edge === before) return false;
+        return (
+          !before ||
+          edge.id !== before.id ||
+          edge.source !== before.source ||
+          edge.target !== before.target ||
+          edge.sourceHandle !== before.sourceHandle ||
+          edge.targetHandle !== before.targetHandle ||
+          edge.type !== before.type
+        );
+      }))
+  );
+}
+
+/**
  * React Flow 会往节点上挂 selected / dragging / measured 等瞬时状态。
  * 落盘前必须剥掉：否则刷新后会带着上次的选中态回来，payload 也白白变大，
  * 而且单纯点选一个节点就会被判定为「有改动」触发保存。
