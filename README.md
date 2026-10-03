@@ -22,6 +22,7 @@ Electron 桌面端使用 48px 全高标签栏，保留原生窗口控制。点�
 pnpm typecheck
 pnpm lint
 pnpm --filter @aigc-flow/desktop test
+pnpm --filter @aigc-flow/server exec node --import tsx --test ../client/src/lib/graph.test.ts
 pnpm --filter @aigc-flow/desktop build:web
 AIGC_TEST_WEB="$PWD/apps/client/out" pnpm --filter @aigc-flow/desktop test:smoke
 ```
@@ -37,3 +38,20 @@ DESKTOP=1 pnpm --filter @aigc-flow/client exec next build --webpack
 ```
 
 Windows 的原生 Window Controls Overlay 和高 DPI 行为需要在 Windows 实机确认。
+
+## 版本发布
+
+更新内容见 [CHANGELOG.md](CHANGELOG.md)。根目录和四个 workspace 包的版本号保持一致，
+安装包版本取自 `apps/desktop/package.json`。
+
+1. 从最新 `dev` 创建 `chore/release-<version>`，更新版本号和更新记录，完成上述验证，
+   通过 PR 合并回 `dev`。
+2. 从 `dev` 发起到 `main` 的发布 PR，评审并合并后，在该 `main` 提交上创建版本标签
+   （例如 `v0.2.0`），标签版本必须与包版本一致。
+3. 推送版本标签触发 `.github/workflows/release.yml`，分别构建 macOS arm64 / x64 的
+   DMG、ZIP，以及 Windows x64 的 EXE。也可以对已验证的提交手动运行该工作流。
+4. 两个平台构建成功后，在 Actions 中下载 `dist-macos-latest` 和 `dist-windows-latest`
+   产物，核对安装包版本并完成实机安装验证，再使用同一标签和更新说明发布 GitHub Release。
+
+当前工作流只上传 Actions 构建产物，不会自动创建 GitHub Release；合并 `main` 本身也不会
+触发打包。只有版本标签或手动运行工作流才触发构建。
