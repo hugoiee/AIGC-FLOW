@@ -4,6 +4,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "待构建的标签或提交；留空使用运行工作流的分支"
+        required: false
+        type: string
 
 jobs:
   build:
@@ -22,6 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       # pnpm 必须在 setup-node 之前：setup-node 的 cache: pnpm 要求 pnpm 已就位
       - uses: pnpm/action-setup@v4
@@ -34,7 +41,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # 静态导出前端（DESKTOP=1 才开 output: export）+ bundle 主进程
-      - run: pnpm --filter @aigc-flow/desktop run build:web
+      # 由 env 设置 DESKTOP，避免包脚本里的 POSIX 赋值语法在 Windows cmd 下失败。
+      - run: pnpm --filter @aigc-flow/client run build
         env:
           DESKTOP: "1"
       - run: pnpm --filter @aigc-flow/desktop run build
