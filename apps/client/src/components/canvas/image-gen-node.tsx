@@ -78,8 +78,6 @@ function currentAspect(gen: ImageGenNodeData): number {
 export function ImageGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as ImageGenNodeData;
   const { updateNodeData } = useReactFlow();
-  // 画布缩放倍率。下方菜单要在屏幕上保持固定大小，用 1/zoom 反向抵消画布缩放
-  const zoom = useStore((state) => state.transform[2]);
   // 配置菜单只在「单击选中」时展开；框选（批量选中）不展开
   const { activeNodeId, dropTargetId, setNodeMark, duplicateNode, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
@@ -88,6 +86,8 @@ export function ImageGenNode({ id, data, selected }: NodeProps) {
   const mark = nodeMarkOf({ type: IMAGE_GEN_NODE_TYPE, data });
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
+  // 只有可见的固定尺寸 UI 需要跟随缩放；其余节点不因画布缩放而重渲染。
+  const zoom = useStore((state) => (selected || mark || isDropTarget ? state.transform[2] : 1));
 
   // 左侧入边连着的上游节点 → 参考图列表。连线增删时这两个 hook 会自动触发重渲
   const connections = useNodeConnections({ handleType: "target" });
