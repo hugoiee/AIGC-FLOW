@@ -460,10 +460,22 @@ void app
         `document.querySelector('${panel(1)} button[title="双击重命名"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
       );
       await wait(
-        () => run<boolean>(`!!document.querySelector('${panel(1)} input[maxlength="100"]')`),
-        "project name input",
+        () =>
+          run<boolean>(`(() => {
+            const input = document.querySelector('${panel(1)} input[maxlength="100"]');
+            return !!input && document.activeElement === input;
+          })()`),
+        "project name input focused",
       );
+      // 输入框挂载和 focus effect 不在同一步，确认焦点后再使用原生输入。
       await window.webContents.insertText("播客最终项目名");
+      await wait(
+        () =>
+          run<boolean>(
+            `document.querySelector('${panel(1)} input[maxlength="100"]')?.value === '播客最终项目名'`,
+          ),
+        "project name entered before close",
+      );
       rejectWrites = true;
       const beforeWindowClose = prompts.length;
       window.close();
