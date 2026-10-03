@@ -20,7 +20,7 @@ import {
   VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
 import { useReactFlow } from "@xyflow/react";
-import { FileVideo, ImageIcon, Music } from "lucide-react";
+import { FileVideo, ImageIcon, Maximize2, Music } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -32,7 +32,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Button } from "@/components/ui/button";
 import { PREVIEW_WIDTH, resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { nodeMarkOf } from "@/lib/node-mark";
 import { nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +44,15 @@ type UpstreamNode = { id: string; type?: string; data: Record<string, unknown> }
  * prompt 里能用 @ 引用的一份素材。id 是上游节点 id，label 是节点名
  * （上传的素材就是文件名），url 只在素材已就绪时有 —— 还在上传 / 生成中的
  * 也列出来（徽章不能因为上游在重新生成就凭空消失），只是发请求时会被跳过。
+ * rejected 是上游被标成了「废弃」：不拦着引用，只在徽章和候选里划线提示。
  */
-export type PromptMediaRef = { id: string; kind: MediaKind; label: string; url?: string };
+export type PromptMediaRef = {
+  id: string;
+  kind: MediaKind;
+  label: string;
+  url?: string;
+  rejected: boolean;
+};
 
 /** 连入的文本节点在 prompt 里的徽章：显示节点名，悬停看正文 */
 export type PromptTextRef = { id: string; label: string; text: string };
@@ -69,6 +78,7 @@ function promptMediaRefOf(node: NonNullable<UpstreamNode>, kind: MediaKind): Pro
     kind,
     label: typeof label === "string" && label !== "" ? label : KIND_LABEL[kind],
     url: media?.kind === kind ? media.url : undefined,
+    rejected: nodeMarkOf(node) === "reject",
   };
 }
 
@@ -239,6 +249,20 @@ const KIND_TEXT_CLASS: Record<MediaKind, string> = {
   audio: "text-sky-600 dark:text-sky-300",
 };
 
+/** 废弃提示的文案，挂在徽章的 title 上，悬停能看到原因 */
+const REJECTED_TITLE = "这份素材已标记为废弃";
+
+/**
+ * 上游被标成废弃时徽章划线变淡。直接改 DOM 类名：徽章不是 React 渲染的，
+ * 标记变了走和改名同一条同步路径（见编辑器里的 useEffect）。
+ */
+function syncRejected(span: HTMLElement, rejected: boolean) {
+  span.classList.toggle("line-through", rejected);
+  span.classList.toggle("opacity-60", rejected);
+  if (rejected) span.title = REJECTED_TITLE;
+  else span.removeAttribute("title");
+}
+
 /** 素材徽章：@ + 节点名，悬停时由编辑器在上方浮出预览 */
 function makeMediaBadge(
   kind: MediaKind,
@@ -258,6 +282,7 @@ function makeMediaBadge(
   name.dataset.label = "";
   name.textContent = refs.get(id)?.label ?? KIND_LABEL[kind];
   span.append(at, name);
+  syncRejected(span, refs.get(id)?.rejected ?? false);
   return span;
 }
 
@@ -323,6 +348,15 @@ type PromptEditorProps = {
   refs: PromptMediaRef[];
   onChange: (value: string) => void;
   placeholder: string;
+  /**
+   * 给了这个回调，内容多到出滚动条时就露出「放大」按钮，点了由节点把整个浮动菜单
+   * 放大成弹层（见 gen-menu-dialog.tsx）。弹层里的那份编辑器不传，免得套娃。
+   */
+  onExpand?: () => void;
+  /** 弹层里的大号形态：更高、字号更大 */
+  large?: boolean;
+  /** 挂载后聚焦并把光标放到末尾，弹层打开时用 */
+  autoFocus?: boolean;
 };
 
 /**
@@ -332,7 +366,16 @@ type PromptEditorProps = {
  * 日常输入只做序列化回写，光标不受影响。
  * 输入 @ 弹出已连入的参考素材列表，选中后在原地插入素材徽章，悬停徽章看预览。
  */
-export function PromptEditor({ value, texts, refs, onChange, placeholder }: PromptEditorProps) {
+export function PromptEditor({
+  value,
+  texts,
+  refs,
+  onChange,
+  placeholder,
+  onExpand,
+  large = false,
+  autoFocus = false,
+}: PromptEditorProps) {
   const ref = useRef<HTMLDivElement>(null);
   const textById = useMemo(() => new Map(texts.map((item) => [item.id, item])), [texts]);
   const refById = useMemo(() => new Map(refs.map((item) => [item.id, item])), [refs]);
@@ -346,6 +389,8 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
     id: string;
     rect: DOMRect;
   } | null>(null);
+  // 内容是否已经多到出滚动条：只有这时才露出放大按钮，短提示词不需要它
+  const [overflowing, setOverflowing] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -355,7 +400,7 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
       setMention(null);
       return;
     }
-    // 内容没变但徽章文案可能变了（上游节点改名），原地更新不动光标
+    // 内容没变但徽章文案 / 废弃状态可能变了（上游节点改名、打标），原地更新不动光标
     const syncLabel = (span: HTMLElement, label: string | undefined) => {
       const name = span.querySelector<HTMLElement>("[data-label]");
       if (label && name && name.textContent !== label) name.textContent = label;
@@ -364,9 +409,40 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
       syncLabel(span, textById.get(span.dataset.token ?? "")?.label);
     }
     for (const span of el.querySelectorAll<HTMLElement>("[data-ref]")) {
-      syncLabel(span, refById.get(span.dataset.ref ?? "")?.label);
+      const item = refById.get(span.dataset.ref ?? "");
+      syncLabel(span, item?.label);
+      syncRejected(span, item?.rejected ?? false);
     }
   }, [value, textById, refById]);
+
+  // 溢出检测要在内容重建之后量，所以排在上面那个 effect 后面；宽度变化（画布缩放不算，
+  // 那是 transform）也会影响换行，用 ResizeObserver 兜住。
+  // 内容一旦超过最大高度，盒子就不再长了，ResizeObserver 收不到通知，所以还得跟着 value 重量
+  // biome-ignore lint/correctness/useExhaustiveDependencies: value 变了要重新量 scrollHeight
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !onExpand) return;
+    const measure = () => setOverflowing(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onExpand, value]);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    // focus() 会把光标放到开头，改到末尾接着写更符合预期
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }, [autoFocus]);
 
   const candidates = useMemo(() => {
     if (!mention) return [];
@@ -446,6 +522,8 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
       }
       if (event.key === "Escape") {
         event.preventDefault();
+        // 放大编辑时 Escape 要先收 @ 菜单，别一下把整个弹层关了（Dialog 在 document 上监听）
+        event.stopPropagation();
         setMention(null);
         return;
       }
@@ -520,9 +598,27 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
         className={cn(
-          "nodrag nowheel max-h-[140px] min-h-16 overflow-y-auto whitespace-pre-wrap break-words text-sm outline-none",
+          "nodrag nowheel overflow-y-auto whitespace-pre-wrap break-words outline-none",
+          large
+            ? "max-h-[50vh] min-h-[36vh] text-base leading-relaxed"
+            : "max-h-[140px] min-h-16 text-sm",
         )}
       />
+
+      {onExpand && overflowing && (
+        // 贴在输入框右下角、滚动条内侧；mousedown 拦掉免得点它时编辑器失焦收起 @ 菜单
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="放大编辑"
+          title="放大编辑"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onExpand}
+          className="nodrag absolute right-3 bottom-1 bg-card/80 text-muted-foreground backdrop-blur-sm"
+        >
+          <Maximize2 />
+        </Button>
+      )}
 
       {mention &&
         createPortal(
@@ -539,7 +635,10 @@ export function PromptEditor({ value, texts, refs, onChange, placeholder }: Prom
       {preview &&
         previewRef?.url &&
         createPortal(
-          <PreviewCard rect={preview.rect} label={previewRef.label}>
+          <PreviewCard
+            rect={preview.rect}
+            label={previewRef.rejected ? `${previewRef.label}（已废弃）` : previewRef.label}
+          >
             <MediaPreview kind={previewRef.kind} label={previewRef.label} url={previewRef.url} />
           </PreviewCard>,
           document.body,
@@ -587,7 +686,7 @@ function MentionMenu({
       role="listbox"
       aria-label="引用参考素材"
       style={{ position: "fixed", left: state.left, top: state.bottom + 4 }}
-      className="z-50 w-56 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+      className="pointer-events-auto z-50 w-56 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
     >
       {candidates.length === 0 ? (
         <p className="px-2 py-1.5 text-muted-foreground text-xs">
@@ -621,7 +720,9 @@ function MentionMenu({
                 <KindIcon kind={item.kind} className="size-3.5" />
               )}
             </span>
-            <span className="truncate">{item.label}</span>
+            <span className={cn("truncate", item.rejected && "line-through opacity-60")}>
+              {item.label}
+            </span>
           </button>
         ))
       )}

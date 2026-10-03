@@ -6,13 +6,13 @@ import { Clapperboard, Type, WandSparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { sourceResourceOf, targetAcceptsOf } from "@/lib/connection";
 
-/** 一次「在这里放个节点」的请求：右键空白或浮动连线落空 / 落错时发起 */
+/** 一次「在这里放个节点」的请求：右键空白，或浮动连线 / 单节点端点拉线落空 / 落错时发起 */
 export type NodePickerRequest = {
   /** 菜单锚点（屏幕坐标，即松手 / 右键的位置） */
   screen: { x: number; y: number };
   /** 新节点的画布坐标 */
   flow: { x: number; y: number };
-  /** 浮动连线场景：待连过来的源节点 id；右键纯添加场景为空数组 */
+  /** 连线场景：待连过来的源节点 id（浮动端点是整个选区，单节点拉线只有一个）；右键纯添加场景为空数组 */
   sourceIds: string[];
 };
 

@@ -7,9 +7,12 @@ import { CreateProjectDialog } from "@/components/create-project-dialog";
 import { EmptyProjects } from "@/components/empty-projects";
 import { ProjectCard } from "@/components/project-card";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { API_BASE, api } from "@/lib/api";
+import { useDesktopWorkspace } from "@/lib/desktop";
 
 export function ProjectList() {
+  const workspace = useDesktopWorkspace();
+  const activeId = workspace?.activeId;
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,15 +24,19 @@ export function ProjectList() {
       setProjects(await res.json());
       setError(null);
     } catch {
-      setError("加载项目列表失败，确认 server 已在 http://localhost:3001 启动");
+      setError(
+        API_BASE
+          ? `加载项目列表失败，确认 server 已在 ${API_BASE} 启动`
+          : "加载项目列表失败，内嵌的服务可能没起来，重启应用试试",
+      );
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (activeId == null) void load();
+  }, [load, activeId]);
 
   const handleCreate = useCallback(async (name: string) => {
     const res = await api.api.projects.$post({ json: { name } });
@@ -41,6 +48,7 @@ export function ProjectList() {
 
   const handleDelete = useCallback(
     async (id: number) => {
+      if (workspace && !(await workspace.beforeDelete(id))) return;
       // 先乐观移除，失败再用快照还原，避免界面和数据库不一致
       const snapshot = projects;
       setProjects(snapshot.filter((project) => project.id !== id));
@@ -48,7 +56,7 @@ export function ProjectList() {
       const res = await api.api.projects[":id"].$delete({ param: { id: String(id) } });
       if (!res.ok) setProjects(snapshot);
     },
-    [projects],
+    [projects, workspace],
   );
 
   if (loading) {

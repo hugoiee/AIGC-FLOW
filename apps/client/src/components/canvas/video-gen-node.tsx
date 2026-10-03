@@ -50,15 +50,30 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { useCanvasActions } from "@/hooks/use-canvas-actions";
 import { api } from "@/lib/api";
+import { beginDesktopTask } from "@/lib/desktop-tasks";
 import { downloadItemOf } from "@/lib/download";
 import { resizedImageUrl, THUMB_WIDTH } from "@/lib/media-url";
+import { nodeMarkOf } from "@/lib/node-mark";
 import { type NodeMedia, nodeMediaOf } from "@/lib/node-media";
 import { cn } from "@/lib/utils";
 import { guardVideoDrag } from "@/lib/video-drag";
-import { GEN_ACCENT, GEN_HANDLE_BASE, PillOption, RatioOption } from "./gen-node-controls";
+import { GenMenuDialog } from "./gen-menu-dialog";
+import {
+  GEN_ACCENT,
+  GEN_HANDLE_BASE,
+  handleScaleStyle,
+  PillOption,
+  RatioOption,
+} from "./gen-node-controls";
 import { NodeActionPanel } from "./node-action-panel";
 import { NodeInfoBar } from "./node-info-bar";
-import { sizePatchOf } from "./node-size";
+import {
+  ChipRejectedMark,
+  NodeMarkBadge,
+  REJECTED_CHIP_CLASS,
+  REJECTED_MEDIA_CLASS,
+} from "./node-mark-badge";
+import { reservedAspect, sizePatchOf } from "./node-size";
 import { PromptEditor, usePromptTokens } from "./prompt-editor";
 
 /** 占位区宽高比跟随所选比例；adaptive（自适应）没有具体值，退回 16:9 */
@@ -71,13 +86,15 @@ function currentAspect(gen: VideoGenNodeData): number {
 export function VideoGenNode({ id, data, selected }: NodeProps) {
   const gen = data as unknown as VideoGenNodeData;
   const { updateNodeData } = useReactFlow();
-  const zoom = useStore((state) => state.transform[2]);
-  const { activeNodeId, dropTargetId } = useCanvasActions();
+  const { activeNodeId, dropTargetId, setNodeMark, duplicateNode, projectId } = useCanvasActions();
   const showMenu = Boolean(selected) && activeNodeId === id;
   // 右侧功能面板（下载 / 全屏）和下方菜单同时出现，且只在已经出结果时才有东西可操作
   const actionItem = showMenu ? downloadItemOf({ id, type: VIDEO_GEN_NODE_TYPE, data }) : null;
+  const mark = nodeMarkOf({ type: VIDEO_GEN_NODE_TYPE, data });
   // 拖线悬停且本节点能接受时播放「可放置」动画
   const isDropTarget = dropTargetId === id;
+  // 信息条、标记角标和拖线落点都保持屏幕尺寸，其余节点无需订阅倍率。
+  const zoom = useStore((state) => (selected || mark || isDropTarget ? state.transform[2] : 1));
 
   const connections = useNodeConnections({ handleType: "target" });
   const sources = useNodesData(connections.map((connection) => connection.source));
@@ -90,9 +107,21 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
     video: isFrames ? 0 : MAX_VIDEO_REFS,
     audio: MAX_AUDIO_REFS,
   });
-  const media = sources
-    .map((node) => nodeMediaOf(node))
-    .filter((item): item is NodeMedia => item !== null);
+  // 缩略格要知道上游有没有被标成废弃（灰显 + 小叉），和 prompt 徽章同一个判据
+  // 缩略格要知道上游有没有被标成废弃（灰显 + 小叉），和 prompt 徽章同一个判据；
+  // 视频 / 音频没有画面可看，格子上显示节点名
+  const media = sources.flatMap((node) => {
+    const item = node ? nodeMediaOf(node) : null;
+    if (!item || !node) return [];
+    const label = node.data.label;
+    return [
+      {
+        ...item,
+        rejected: nodeMarkOf(node) === "reject",
+        label: typeof label === "string" ? label : "",
+      },
+    ];
+  });
 
   // 参考素材 chips 按种类分组展示，上限同上
   const imageRefs = media
@@ -104,21 +133,27 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
   const audioRefs = media.filter((item) => item.kind === "audio").slice(0, MAX_AUDIO_REFS);
 
   const generating = gen.status === "generating";
+  // 提示词多到出滚动条时可以把整个浮动菜单放大成弹层专心改
+  const [expanded, setExpanded] = useState(false);
 
   /** 点生成：同图像节点的状态机。内网接口同步阻塞，视频可能要等几分钟 */
   async function handleGenerate() {
     if (generating) return;
-    // 清掉上一条的尺寸：新视频加载出来之前，信息条不该还挂着旧数字
+    // 清掉上一条的尺寸：新视频加载出来之前，信息条不该还挂着旧数字。
+    // 标记跟结果走：采用 / 废弃是给上一个结果打的，一起清掉
     updateNodeData(id, {
       status: "generating",
       error: undefined,
       naturalWidth: undefined,
       naturalHeight: undefined,
+      mark: undefined,
     });
 
+    const finish = beginDesktopTask(projectId);
     try {
       const res = await api.api.generate.video.$post({
         json: {
+          projectId,
           version: gen.version,
           mode: gen.mode,
           prompt: resolvedPrompt,
@@ -145,6 +180,8 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
     } catch {
       toast.error("视频生成失败", { description: "连不上服务，确认 server 已启动" });
       updateNodeData(id, { status: "error", error: "连不上服务，确认 server 已启动" });
+    } finally {
+      finish();
     }
   }
 
@@ -165,7 +202,9 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
       <div className="flex flex-col gap-4" style={{ width: IMAGE_GEN_NODE_WIDTH }}>
         {/* 端点挂在占位符容器两侧垂直中心，菜单展开收起不影响端点位置（同图像节点） */}
         <motion.div
-          className="relative"
+          // z-10：右侧功能面板是 1/zoom 反向缩放的，画布缩小后它在屏幕上比结果区高，
+          // 会伸进下方的菜单区域；菜单在 DOM 里排在后面，不抬层级就会盖住面板
+          className="relative z-10"
           animate={isDropTarget ? { scale: [1, 1.02, 1] } : { scale: 1 }}
           transition={
             isDropTarget
@@ -180,17 +219,33 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
               isDropTarget && "outline outline-2 outline-[#3b82f6]",
             )}
           >
-            <ResultArea
-              gen={gen}
-              aspect={currentAspect(gen)}
-              onNaturalSize={(width, height) => {
-                const patch = sizePatchOf(gen, width, height);
-                if (patch) updateNodeData(id, patch);
-              }}
-            />
+            <div className={cn(mark === "reject" && REJECTED_MEDIA_CLASS)}>
+              <ResultArea
+                gen={gen}
+                aspect={currentAspect(gen)}
+                onNaturalSize={(width, height) => {
+                  const patch = sizePatchOf(gen, width, height);
+                  if (patch) updateNodeData(id, patch);
+                }}
+              />
+            </div>
           </div>
 
-          <Handle type="target" position={Position.Left} style={{ ...GEN_HANDLE_BASE, left: -10 }}>
+          {mark && <NodeMarkBadge mark={mark} zoom={zoom} />}
+
+          {/* 两头都是选中才露出；target 在被拉线悬停时也露出来当落点提示，
+              不选中时连线照样能落在节点身上。藏法同图像生成节点（opacity，不能不渲染） */}
+          <Handle
+            type="target"
+            position={Position.Left}
+            style={{
+              ...GEN_HANDLE_BASE,
+              left: -10,
+              ...handleScaleStyle(zoom, Position.Left),
+              opacity: selected || isDropTarget ? 1 : 0,
+              pointerEvents: selected || isDropTarget ? "auto" : "none",
+            }}
+          >
             <Plus className="pointer-events-none size-3" />
           </Handle>
           <Handle
@@ -199,6 +254,7 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             style={{
               ...GEN_HANDLE_BASE,
               right: -10,
+              ...handleScaleStyle(zoom, Position.Right),
               opacity: selected ? 1 : 0,
               pointerEvents: selected ? "auto" : "none",
             }}
@@ -206,46 +262,71 @@ export function VideoGenNode({ id, data, selected }: NodeProps) {
             <Plus className="pointer-events-none size-3" />
           </Handle>
 
-          {actionItem && <NodeActionPanel item={actionItem} zoom={zoom} />}
+          {actionItem && (
+            <NodeActionPanel
+              item={actionItem}
+              zoom={zoom}
+              mark={mark}
+              onMark={(next) => setNodeMark(id, next)}
+              onDuplicate={() => duplicateNode(id)}
+            />
+          )}
         </motion.div>
 
         {showMenu && (
           <div style={{ transform: `scale(${1 / zoom})`, transformOrigin: "top center" }}>
             <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
-              <ReferenceChips refs={[...imageRefs, ...videoRefs, ...audioRefs]} frames={isFrames} />
-
-              <PromptEditor
-                value={gen.prompt}
-                texts={texts}
-                refs={refs}
-                onChange={(value) => updateNodeData(id, { prompt: value })}
-                placeholder="今天我们要创作什么？"
-              />
-
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <ModeSelect nodeId={id} gen={gen} />
-                  <VideoSetting nodeId={id} gen={gen} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <VersionSelect nodeId={id} gen={gen} />
-                  <Button
-                    size="sm"
-                    className="nodrag rounded-full px-5"
-                    disabled={generating || !resolvedPrompt}
-                    onClick={handleGenerate}
-                  >
-                    {generating && <Loader2 className="animate-spin" />}
-                    {generating ? "生成中" : "生成"}
-                  </Button>
-                </div>
-              </div>
+              {renderMenu(false)}
             </div>
           </div>
         )}
       </div>
+
+      {/* 放大后的弹层：同一套菜单的大号形态，portal 到 body，不受画布缩放影响 */}
+      <GenMenuDialog open={expanded} onOpenChange={setExpanded} title={gen.label}>
+        {renderMenu(true)}
+      </GenMenuDialog>
     </>
   );
+
+  /** 浮动菜单的内容：参考素材 → 提示词 → 底部选项 + 生成。节点里和放大弹层里各渲染一份 */
+  function renderMenu(large: boolean) {
+    return (
+      <>
+        <ReferenceChips refs={[...imageRefs, ...videoRefs, ...audioRefs]} frames={isFrames} />
+
+        <PromptEditor
+          value={gen.prompt}
+          texts={texts}
+          refs={refs}
+          onChange={(value) => updateNodeData(id, { prompt: value })}
+          placeholder="今天我们要创作什么？"
+          onExpand={large ? undefined : () => setExpanded(true)}
+          large={large}
+          autoFocus={large}
+        />
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ModeSelect nodeId={id} gen={gen} />
+            <VideoSetting nodeId={id} gen={gen} />
+          </div>
+          <div className="flex items-center gap-2">
+            <VersionSelect nodeId={id} gen={gen} />
+            <Button
+              size="sm"
+              className="nodrag rounded-full px-5"
+              disabled={generating || !resolvedPrompt}
+              onClick={handleGenerate}
+            >
+              {generating && <Loader2 className="animate-spin" />}
+              {generating ? "生成中" : "生成"}
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+  }
 }
 
 /** 上方结果区：占位（播放键，对齐设计稿视频占位符）→ 生成中 → 结果视频 / 失败 */
@@ -259,8 +340,14 @@ function ResultArea({
   onNaturalSize: (width: number, height: number) => void;
 }) {
   const [loadFailed, setLoadFailed] = useState(false);
+  // metadata 回来没有。回来之前高度是 <video> 的固有尺寸（300×150）撑的，
+  // 和真实比例差着老远，得自己按比例占住，见 reservedAspect
+  const [loaded, setLoaded] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 url 正是为了在换地址时重置
-  useEffect(() => setLoadFailed(false), [gen.resultUrl]);
+  useEffect(() => {
+    setLoadFailed(false);
+    setLoaded(false);
+  }, [gen.resultUrl]);
 
   if (gen.status === "ready" && gen.resultUrl && !loadFailed) {
     return (
@@ -270,9 +357,13 @@ function ResultArea({
         controls
         // 视频地址不走缩略参数，metadata 里的 videoWidth 就是原始尺寸
         preload="metadata"
-        onLoadedMetadata={(event) =>
-          onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
-        }
+        // metadata 回来之前先按比例占住高度，回来之后交回给视频自身的比例。
+        // 视频是 object-fit:contain，占位比例和实际比例不一致也只是上下留黑边，不变形
+        style={loaded ? undefined : { aspectRatio: reservedAspect(gen, aspect) }}
+        onLoadedMetadata={(event) => {
+          setLoaded(true);
+          onNaturalSize(event.currentTarget.videoWidth, event.currentTarget.videoHeight);
+        }}
         onError={() => setLoadFailed(true)}
         // nodrag 由它按指针位置动态挂：画面上放行拖节点，控件条上让给播放器
         onPointerDownCapture={guardVideoDrag}
@@ -327,11 +418,35 @@ function ResultArea({
 const CHIP_ICON = { image: ImageIcon, video: FileVideo, audio: Music } as const;
 
 /** 已连素材的实体格：图片缩略图，视频 / 音频显示种类图标 */
-function RefChip({ kind, url }: Pick<NodeMedia, "kind" | "url">) {
-  return (
-    <div className="flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 text-muted-foreground">
-      {kind === "image" ? (
-        // biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image
+/** 已连入的参考素材：图片出缩略图，视频 / 音频出图标。上游废弃的灰显 + 小叉 */
+type RefMedia = NodeMedia & { rejected: boolean; label: string };
+
+/**
+ * 已连入的视频 / 音频没有缩略图可放，格子按种类上色（和 prompt 徽章同一套：视频紫、
+ * 音频蓝）、实线边框、显示节点名 —— 否则和旁边虚线灰底的「参考视频 / 参考音频」
+ * 占位格长得一样，看不出到底连没连上。
+ */
+const KIND_CHIP_CLASS: Record<Exclude<MediaKind, "image">, string> = {
+  video: "border-violet-500/30 bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  audio: "border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300",
+};
+
+function RefChip({
+  kind,
+  url,
+  rejected,
+  label,
+}: Pick<RefMedia, "kind" | "url" | "rejected" | "label">) {
+  if (kind === "image") {
+    return (
+      <div
+        title={label}
+        className={cn(
+          "relative flex h-[68px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40",
+          rejected && REJECTED_CHIP_CLASS,
+        )}
+      >
+        {/* biome-ignore lint/performance/noImgElement: 画布素材缩略图，无需 next/image */}
         <img
           src={resizedImageUrl(url, THUMB_WIDTH)}
           alt="参考素材"
@@ -340,9 +455,25 @@ function RefChip({ kind, url }: Pick<NodeMedia, "kind" | "url">) {
           decoding="async"
           className="size-full object-cover"
         />
-      ) : (
-        <ChipIcon kind={kind} />
+        {rejected && <ChipRejectedMark />}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      title={label}
+      className={cn(
+        "relative flex h-[68px] w-[56px] shrink-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border px-1",
+        KIND_CHIP_CLASS[kind],
+        rejected && REJECTED_CHIP_CLASS,
       )}
+    >
+      <ChipIcon kind={kind} />
+      <span className="max-w-full truncate text-[10px] leading-tight">
+        {label || (kind === "video" ? "视频" : "音频")}
+      </span>
+      {rejected && <ChipRejectedMark />}
     </div>
   );
 }
@@ -375,7 +506,7 @@ function RefPlaceholder({
  * 首尾帧模式：固定「首帧」「尾帧」两格（按连入顺序取前两张图），
  * 视频参考不支持不显示，音频照常。
  */
-function ReferenceChips({ refs, frames }: { refs: NodeMedia[]; frames: boolean }) {
+function ReferenceChips({ refs, frames }: { refs: RefMedia[]; frames: boolean }) {
   const images = refs.filter((item) => item.kind === "image");
   const videos = refs.filter((item) => item.kind === "video");
   const audios = refs.filter((item) => item.kind === "audio");
@@ -403,7 +534,10 @@ function ReferenceChips({ refs, frames }: { refs: NodeMedia[]; frames: boolean }
           return (
             <div
               key={label}
-              className="relative h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border bg-muted/40"
+              className={cn(
+                "relative h-[68px] w-[56px] shrink-0 overflow-hidden rounded-lg border bg-muted/40",
+                item?.rejected && REJECTED_CHIP_CLASS,
+              )}
             >
               {item ? (
                 <>
@@ -416,6 +550,7 @@ function ReferenceChips({ refs, frames }: { refs: NodeMedia[]; frames: boolean }
                     decoding="async"
                     className="size-full object-cover"
                   />
+                  {item.rejected && <ChipRejectedMark />}
                   <span className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center text-[10px] text-white">
                     {label}
                   </span>

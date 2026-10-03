@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import { ProjectCover } from "@/components/project-cover";
 import { Button } from "@/components/ui/button";
+import { useDesktopWorkspace } from "@/lib/desktop";
 import { formatRelativeTime } from "@/lib/format-date";
 
 type ProjectCardProps = {
@@ -13,10 +14,19 @@ type ProjectCardProps = {
 };
 
 export function ProjectCard({ project, onDelete }: ProjectCardProps) {
+  const workspace = useDesktopWorkspace();
   return (
     <article className="group relative overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md">
       {/* 整卡可点，但删除按钮要浮在链接之上，所以链接铺满、按钮用更高的 z-index */}
-      <Link href={`/projects/${project.id}`} className="block">
+      <Link
+        href={`/projects?id=${project.id}`}
+        className="block"
+        onClick={(event) => {
+          if (!workspace) return;
+          event.preventDefault();
+          workspace.open(project);
+        }}
+      >
         <div className="aspect-video overflow-hidden bg-muted">
           <ProjectCover name={project.name} coverImage={project.coverImage} />
         </div>

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nodeMarkSchema } from "./node-mark";
 
 /** 画布支持的媒体种类。由 MIME 大类决定，不看扩展名 */
 export const MEDIA_KINDS = ["image", "video", "audio"] as const;
@@ -100,6 +101,8 @@ export const mediaNodeDataSchema = z.object({
   url: z.string().optional(),
   /** status 为 error 时的原因 */
   error: z.string().optional(),
+  /** 节点标记（采用 / 废弃），缺省即未标记。见 node-mark.ts */
+  mark: nodeMarkSchema.optional(),
   /** 媒体的原始像素尺寸，加载完成后由前端探测写入，只用于信息条展示 */
   naturalWidth: z.number().positive().optional(),
   naturalHeight: z.number().positive().optional(),

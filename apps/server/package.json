@@ -1,10 +1,12 @@
 {
   "name": "@aigc-flow/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "exports": {
-    "./app-type": "./src/app.ts"
+    "./app-type": "./src/app.ts",
+    "./app": "./src/app.ts",
+    "./db": "./src/db/index.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -22,6 +24,7 @@
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.5",
+    "undici": "^8.10.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {

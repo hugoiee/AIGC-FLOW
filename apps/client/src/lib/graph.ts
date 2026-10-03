@@ -6,6 +6,7 @@ import {
   MEDIA_NODE_TYPE,
   type MediaNodeData,
   type ProjectGraph,
+  STORYBOARD_NODE_TYPE,
   TEXT_NODE_TYPE,
   VIDEO_GEN_NODE_TYPE,
 } from "@aigc-flow/shared";
@@ -17,11 +18,63 @@ import { type Edge, type Node, Position, type Viewport } from "@xyflow/react";
  * 只会留下一个永远"上传中"的死节点。
  */
 /** 尺寸要落盘的节点类型：这几种的尺寸是用户定的，不是内容撑出来的 */
-const SIZED_NODE_TYPES = new Set<string>([MEDIA_NODE_TYPE, GROUP_NODE_TYPE, TEXT_NODE_TYPE]);
+const SIZED_NODE_TYPES = new Set<string>([
+  MEDIA_NODE_TYPE,
+  GROUP_NODE_TYPE,
+  TEXT_NODE_TYPE,
+  STORYBOARD_NODE_TYPE,
+]);
 
 function isPersistable(node: Node): boolean {
   if (node.type !== MEDIA_NODE_TYPE) return true;
   return (node.data as unknown as MediaNodeData)?.status === "ready";
+}
+
+/**
+ * 高频交互只检查可能落盘的字段，不展开 data、构造快照或序列化整张图。
+ * React Flow 不可变更新 data，所以引用相同就能跳过提示词和分镜等大块内容。
+ * 这里只做保守的变更判断；防抖后的完整比较负责过滤生成状态归一化等无效改动。
+ */
+export function hasGraphContentChanges(
+  previous: { nodes: Node[]; edges: Edge[] },
+  next: { nodes: Node[]; edges: Edge[] },
+): boolean {
+  if (previous.nodes.length !== next.nodes.length || previous.edges.length !== next.edges.length) {
+    return true;
+  }
+  return (
+    (previous.nodes !== next.nodes &&
+      next.nodes.some((node, index) => {
+        const before = previous.nodes[index];
+        if (node === before) return false;
+        return (
+          !before ||
+          node.id !== before.id ||
+          node.type !== before.type ||
+          node.data !== before.data ||
+          node.position.x !== before.position.x ||
+          node.position.y !== before.position.y ||
+          node.parentId !== before.parentId ||
+          (node.extent === "parent") !== (before.extent === "parent") ||
+          (SIZED_NODE_TYPES.has(node.type ?? "") &&
+            (node.width !== before.width || node.height !== before.height))
+        );
+      })) ||
+    (previous.edges !== next.edges &&
+      next.edges.some((edge, index) => {
+        const before = previous.edges[index];
+        if (edge === before) return false;
+        return (
+          !before ||
+          edge.id !== before.id ||
+          edge.source !== before.source ||
+          edge.target !== before.target ||
+          edge.sourceHandle !== before.sourceHandle ||
+          edge.targetHandle !== before.targetHandle ||
+          edge.type !== before.type
+        );
+      }))
+  );
 }
 
 /**

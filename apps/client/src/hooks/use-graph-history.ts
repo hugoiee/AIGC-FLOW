@@ -78,19 +78,25 @@ export function useGraphHistory(initial: Snapshot) {
 }
 
 /** 注册画布快捷键。输入框聚焦时全部让行，否则会吞掉正常的文字编辑 */
-export function useCanvasShortcuts(handlers: {
-  onUndo: () => void;
-  onRedo: () => void;
-  onCopy: () => void;
-  onPaste: () => void;
-  onSelectMode: () => void;
-  onMoveMode: () => void;
-}) {
+export function useCanvasShortcuts(
+  handlers: {
+    onUndo: () => void;
+    onRedo: () => void;
+    onCopy: () => void;
+    onPaste: () => void;
+    onSelectMode: () => void;
+    onMoveMode: () => void;
+  },
+  enabled = true,
+) {
+  const active = useRef(enabled);
+  active.current = enabled;
   const ref = useRef(handlers);
   ref.current = handlers;
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (!active.current) return;
       const target = event.target as HTMLElement | null;
       if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? "")) {
         return;

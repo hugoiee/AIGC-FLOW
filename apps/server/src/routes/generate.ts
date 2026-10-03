@@ -1,4 +1,5 @@
 import {
+  clampImageConfig,
   clampVideoConfig,
   generateImageRequestSchema,
   generateVideoRequestSchema,
@@ -8,10 +9,11 @@ import {
 } from "@aigc-flow/shared";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { Agent, fetch as undiciFetch } from "undici";
 import { db } from "../db";
 import { generations } from "../db/schema";
 import { getAppSettings } from "../db/settings";
-import { messageOf, snippet } from "../lib/upstream";
+import { fetchFailureOf, isConnectFailure, messageOf, snippet } from "../lib/upstream";
 
 /** 内网 /aigc 的返回结构 */
 type AigcResponse = {
@@ -23,23 +25,37 @@ type AigcResponse = {
 };
 
 /**
- * 转发到内网 /aigc 并取出结果地址。
- * 内网接口是同步阻塞式的，发出后一直等到生成完成才返回，不设超时。
+ * 转发生成请求专用的连接配置。内网 /aigc 是同步阻塞式的，发出后一直等到生成完成
+ * 才返回，受算力影响单次可能长达 10-30 分钟。Node 自带 fetch 底层是 undici，
+ * 默认 headersTimeout / bodyTimeout 都是 300 秒：5 分钟没等到响应头就抛
+ * `fetch failed`（cause 是 HeadersTimeoutError），之前被一律当成「连不上内网」报出去，
+ * 表现就是「配置和网络都正常，慢一点的生成却偶发连不上」。
+ * 这里两个等待超时都关掉（0 = 不限），只保留建连超时：真连不上还是要快点报。
  */
+const aigcAgent = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 10_000 });
+
+/** 转发到内网 /aigc 并取出结果地址 */
 async function callAigc(
   endpoint: string,
   payload: Record<string, unknown>,
 ): Promise<{ url: string } | { message: string }> {
-  let res: Response;
+  let res: Awaited<ReturnType<typeof undiciFetch>>;
   try {
-    res = await fetch(endpoint, {
+    // 用 undici 自己的 fetch 而不是全局 fetch：dispatcher 要和 fetch 来自同一份 undici
+    res = await undiciFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      dispatcher: aigcAgent,
     });
   } catch (error) {
-    console.error("[generate] fetch failed", error);
-    return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
+    const { code, detail } = fetchFailureOf(error);
+    console.error("[generate] fetch failed", code || "(no code)", detail);
+    if (isConnectFailure(code, detail)) {
+      return { message: "连不上内网生成服务，确认在内网环境且地址配置正确" };
+    }
+    // 连上了但没等到完整响应（对端断开、中途网络抖动等），把原因如实带出去
+    return { message: `等待内网生成服务返回时中断（${code}${detail ? `：${detail}` : ""}）` };
   }
 
   if (!res.ok) {
@@ -70,8 +86,9 @@ function errorDetailOf(error: unknown): string {
   return String(error);
 }
 
-/** 记一条生成流水（成功失败都记），统计面板和成本核算用 */
+/** 记一条生成流水（成功失败都记），按项目归属，统计面板和成本核算用 */
 function recordGeneration(
+  projectId: number,
   kind: "image" | "video",
   payload: Record<string, unknown>,
   outcome: { url: string } | { message: string },
@@ -79,6 +96,7 @@ function recordGeneration(
 ) {
   db.insert(generations)
     .values({
+      projectId,
       kind,
       payload: JSON.stringify(payload),
       status: "url" in outcome ? "success" : "error",
@@ -91,7 +109,8 @@ function recordGeneration(
 
 export const generateRoute = new Hono()
   .post("/", zValidator("json", generateImageRequestSchema), async (c) => {
-    const input = c.req.valid("json");
+    // 质量档等模型相关的约束统一在 shared 的 clampImageConfig 里收敛（同视频那条）
+    const input = clampImageConfig(c.req.valid("json"));
     const { generateUrl, reqFrom } = getAppSettings();
 
     if (!reqFrom) {
@@ -102,9 +121,10 @@ export const generateRoute = new Hono()
     }
 
     const model = imageModelOf(input.model);
-    // 两家模型的 config 形状不同：gpt 是 size/n/quality，nano 是 aspect_ratio/image_size
+    // 两家模型的 config 形状不同：gpt 家族是 size/n/quality，nano 是 aspect_ratio/image_size。
+    // 按 family 分流，别按具体 model id —— gpt 家族现在有三个成员
     const config =
-      input.model === "gpt-image-2"
+      model.family === "gpt"
         ? { size: gptSizeOf(input.sizePreset).size, n: 1, quality: input.quality }
         : { aspect_ratio: input.aspectRatio, image_size: input.imageSize };
 
@@ -118,7 +138,7 @@ export const generateRoute = new Hono()
     };
 
     const outcome = await callAigc(generateUrl, payload);
-    recordGeneration("image", payload, outcome);
+    recordGeneration(input.projectId, "image", payload, outcome);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });
   })
@@ -155,7 +175,7 @@ export const generateRoute = new Hono()
     };
 
     const outcome = await callAigc(generateUrl, payload);
-    recordGeneration("video", payload, outcome, input.duration);
+    recordGeneration(input.projectId, "video", payload, outcome, input.duration);
     if ("message" in outcome) return c.json({ message: outcome.message }, 502);
     return c.json({ url: outcome.url });
   });

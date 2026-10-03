@@ -1,5 +1,6 @@
 "use client";
 
+import { NODE_MARK_LABEL, type NodeMark } from "@aigc-flow/shared";
 import { NodeToolbar, Position } from "@xyflow/react";
 import {
   AlignCenterHorizontal,
@@ -10,13 +11,15 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalSpaceAround,
+  Check,
   ChevronDown,
   Download,
+  Eraser,
   Group,
   LayoutGrid,
-  StretchHorizontal,
-  StretchVertical,
+  Tag,
   Ungroup,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { type AlignMode, DISTRIBUTE_MIN, LAYOUT_GAP, type SpacingMode } from "@/lib/layout";
+import { type AlignMode, DISTRIBUTE_MIN, type SpacingMode } from "@/lib/layout";
 
 /**
  * 选中这么多个节点才出现工具条。
@@ -44,28 +47,12 @@ const ALIGN_ITEMS: Array<{ mode: AlignMode; label: string; icon: typeof AlignSta
   { mode: "bottom", label: "底部对齐", icon: AlignEndHorizontal },
 ];
 
-const SPACING_ITEMS: Array<{
-  mode: SpacingMode;
-  label: string;
-  icon: typeof AlignHorizontalSpaceAround;
-  /** 等距分布要两端固定、中间摊开，少于 3 个没有可分的空隙 */
-  needsThree: boolean;
-}> = [
-  {
-    mode: "distributeX",
-    label: "水平等距分布",
-    icon: AlignHorizontalSpaceAround,
-    needsThree: true,
-  },
-  { mode: "distributeY", label: "垂直等距分布", icon: AlignVerticalSpaceAround, needsThree: true },
-  {
-    mode: "packX",
-    label: `横向收拢至 ${LAYOUT_GAP}px`,
-    icon: StretchHorizontal,
-    needsThree: false,
-  },
-  { mode: "packY", label: `纵向收拢至 ${LAYOUT_GAP}px`, icon: StretchVertical, needsThree: false },
-];
+/** 等距分布两档：两端固定、中间摊开，所以至少要 3 个（DISTRIBUTE_MIN） */
+const SPACING_ITEMS: Array<{ mode: SpacingMode; label: string; icon: typeof AlignStartVertical }> =
+  [
+    { mode: "distributeX", label: "水平等距分布", icon: AlignHorizontalSpaceAround },
+    { mode: "distributeY", label: "垂直等距分布", icon: AlignVerticalSpaceAround },
+  ];
 
 type SelectionToolbarProps = {
   selectedIds: string[];
@@ -81,7 +68,17 @@ type SelectionToolbarProps = {
   onDownload: () => void;
   /** 选区里能下载的素材数量。普通节点和还没传完的媒体不算 */
   downloadCount: number;
+  /** 给选区里的素材批量打标（null 清除），选中编组时作用于组内成员 */
+  onMark: (mark: NodeMark | null) => void;
+  /** 选区里能打标的素材数量，判据和下载一样：身上得有素材 */
+  markCount: number;
 };
+
+const MARK_ITEMS: Array<{ mark: NodeMark | null; label: string; icon: typeof Check }> = [
+  { mark: "keep", label: NODE_MARK_LABEL.keep, icon: Check },
+  { mark: "reject", label: NODE_MARK_LABEL.reject, icon: X },
+  { mark: null, label: "清除标记", icon: Eraser },
+];
 
 /**
  * 多选时浮在选区上方的操作条。
@@ -101,6 +98,8 @@ export function SelectionToolbar({
   onSpace,
   onDownload,
   downloadCount,
+  onMark,
+  markCount,
 }: SelectionToolbarProps) {
   // 两种形态：选中一个编组时只提供解组 + 下载；选中多个普通节点时是排布那一套
   const isGroup = groupId !== null;
@@ -151,7 +150,7 @@ export function SelectionToolbar({
             </TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="!h-5 mx-1" />
+          <Separator orientation="vertical" className="!h-5 !self-center mx-1" />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -160,9 +159,13 @@ export function SelectionToolbar({
                 <ChevronDown />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" side="top">
+            <DropdownMenuContent align="center" side="top" className="min-w-40">
               {ALIGN_ITEMS.map(({ mode, label, icon: Icon }) => (
-                <DropdownMenuItem key={mode} onSelect={() => onAlign(mode)}>
+                <DropdownMenuItem
+                  key={mode}
+                  onSelect={() => onAlign(mode)}
+                  className="whitespace-nowrap"
+                >
                   <Icon />
                   {label}
                 </DropdownMenuItem>
@@ -171,18 +174,35 @@ export function SelectionToolbar({
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" aria-label="间距调整">
-                <AlignHorizontalSpaceAround />
-                <ChevronDown />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" side="top">
-              {SPACING_ITEMS.map(({ mode, label, icon: Icon, needsThree }) => (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* 两档都要求至少 3 个，不够时整个按钮置灰；disabled 不派发鼠标事件，套 span 承接 tooltip */}
+                <span className="inline-flex">
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={selectedIds.length < DISTRIBUTE_MIN}
+                      aria-label="等距分布"
+                    >
+                      <AlignHorizontalSpaceAround />
+                      <ChevronDown />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {selectedIds.length < DISTRIBUTE_MIN
+                  ? `等距分布至少要选 ${DISTRIBUTE_MIN} 个节点`
+                  : "等距分布"}
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="center" side="top" className="min-w-40">
+              {SPACING_ITEMS.map(({ mode, label, icon: Icon }) => (
                 <DropdownMenuItem
                   key={mode}
-                  disabled={needsThree && selectedIds.length < DISTRIBUTE_MIN}
                   onSelect={() => onSpace(mode)}
+                  className="whitespace-nowrap"
                 >
                   <Icon />
                   {label}
@@ -193,7 +213,37 @@ export function SelectionToolbar({
         </>
       )}
 
-      <Separator orientation="vertical" className="!h-5 mx-1" />
+      <Separator orientation="vertical" className="!h-5 !self-center mx-1" />
+
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" disabled={markCount === 0} aria-label="批量标记">
+                  <Tag />
+                  <ChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {markCount === 0 ? "选区里没有可标记的素材" : `标记 ${markCount} 个素材`}
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="center" side="top" className="min-w-40">
+          {MARK_ITEMS.map(({ mark, label, icon: Icon }) => (
+            <DropdownMenuItem
+              key={label}
+              onSelect={() => onMark(mark)}
+              className="whitespace-nowrap"
+            >
+              <Icon />
+              {label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <Tooltip>
         <TooltipTrigger asChild>

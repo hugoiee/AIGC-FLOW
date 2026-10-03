@@ -1,6 +1,6 @@
 import { EMPTY_GRAPH_JSON } from "@aigc-flow/shared";
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /**
  * 时间戳统一存 ISO 8601 UTC（带 Z）。
@@ -33,22 +33,34 @@ export const settings = sqliteTable("settings", {
 
 export type SettingRow = typeof settings.$inferSelect;
 
-/** 生成请求流水，成本核算用。每次转发内网 /aigc 都记一条，成功失败都记 */
-export const generations = sqliteTable("generations", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  /** image | video */
-  kind: text("kind").notNull(),
-  /** 发给内网接口的完整请求体 JSON（req_from 也在里面，核对来源用） */
-  payload: text("payload").notNull(),
-  /** success | error */
-  status: text("status").notNull(),
-  /** 失败原因，成功为 null */
-  error: text("error"),
-  /** 生成结果地址，失败为 null */
-  resultUrl: text("result_url"),
-  /** 视频请求的时长（秒），-1 表示自动；图像为 null */
-  durationSeconds: integer("duration_seconds"),
-  createdAt: text("created_at").notNull().default(isoNow),
-});
+/**
+ * 生成请求流水，成本核算用。每次转发内网 /aigc 都记一条，成功失败都记。
+ * 按项目（画布）归属，统计面板按当前项目过滤。
+ */
+export const generations = sqliteTable(
+  "generations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /**
+     * 所属项目。加这一列之前的老记录是 null；项目删除后置 null 而不是级联删 ——
+     * 花出去的钱不因为画布删了就不算了，全局口径（不带 projectId 查）仍能看到。
+     */
+    projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** image | video */
+    kind: text("kind").notNull(),
+    /** 发给内网接口的完整请求体 JSON（req_from 也在里面，核对来源用） */
+    payload: text("payload").notNull(),
+    /** success | error */
+    status: text("status").notNull(),
+    /** 失败原因，成功为 null */
+    error: text("error"),
+    /** 生成结果地址，失败为 null */
+    resultUrl: text("result_url"),
+    /** 视频请求的时长（秒），-1 表示自动；图像为 null */
+    durationSeconds: integer("duration_seconds"),
+    createdAt: text("created_at").notNull().default(isoNow),
+  },
+  (table) => [index("generations_project_id_idx").on(table.projectId)],
+);
 
 export type GenerationRow = typeof generations.$inferSelect;

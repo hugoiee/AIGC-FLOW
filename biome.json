@@ -66,6 +66,12 @@
   },
   "overrides": [
     {
+      "includes": ["apps/client/public/desktop/*.svg"],
+      "linter": {
+        "rules": { "a11y": { "noSvgWithoutTitle": "off" } }
+      }
+    },
+    {
       "includes": ["apps/client/src/components/ui/**"],
       "linter": {
         "rules": {

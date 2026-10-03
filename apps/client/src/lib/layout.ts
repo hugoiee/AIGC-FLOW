@@ -131,27 +131,21 @@ export function arrangeNodes(nodes: Node[], selectedIds: string[]): Node[] {
   return applyPositions(nodes, moved);
 }
 
-export type SpacingMode = "distributeX" | "distributeY" | "packX" | "packY";
+export type SpacingMode = "distributeX" | "distributeY";
 
-/** 分布 / 收拢至少要这么多个节点才有意义（两端固定，中间才有可分的空隙） */
+/** 等距分布要两端固定、中间摊开，少于 3 个没有可分的空隙 */
 export const DISTRIBUTE_MIN = 3;
 
 /**
- * 间距调整。
- *
- * distributeX / distributeY：两端的节点不动，中间的重新摊开成等距 ——
- * 这是「已经摆好了大致位置，只想让空隙一样宽」的场景，所以不能动总跨度。
- * packX / packY：沿轴向按固定间距收拢，用来把散开的一批素材收成一条。
- *
- * 两种都只动一个轴向，另一个轴保持原样，不会把用户排好的另一维打乱。
+ * 等距分布：沿轴向两端的节点不动，中间的重新摊开成等距。
+ * 曾经还有「按固定间距收拢」两档，用得少、和整理节点重叠，去掉了。
  */
 export function spaceNodes(nodes: Node[], selectedIds: string[], mode: SpacingMode): Node[] {
   const ids = new Set(selectedIds);
   const boxes = boxesOf(nodes, ids);
-  const horizontal = mode === "distributeX" || mode === "packX";
-  const distribute = mode === "distributeX" || mode === "distributeY";
+  const horizontal = mode === "distributeX";
 
-  if (boxes.length < (distribute ? DISTRIBUTE_MIN : 2)) return nodes;
+  if (boxes.length < DISTRIBUTE_MIN) return nodes;
 
   const start = (box: Box) => (horizontal ? box.x : box.y);
   const extent = (box: Box) => (horizontal ? box.width : box.height);
@@ -163,9 +157,9 @@ export function spaceNodes(nodes: Node[], selectedIds: string[], mode: SpacingMo
 
   const total = sorted.reduce((sum, box) => sum + extent(box), 0);
   const span = start(last) + extent(last) - start(first);
-  // 等距分布时空隙由总跨度倒推，可能是负数（节点本来就挤到重叠），照算即可，
+  // 空隙由总跨度倒推，可能是负数（节点本来就挤到重叠），照算即可，
   // 结果仍然是「重叠得一样多」，比强行掰开更符合预期
-  const gap = distribute ? (span - total) / (sorted.length - 1) : LAYOUT_GAP;
+  const gap = (span - total) / (sorted.length - 1);
 
   const moved = new Map<string, { x: number; y: number }>();
   let cursor = start(first);

@@ -4,9 +4,10 @@ import type { Project, ProjectGraph } from "@aigc-flow/shared";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { useDesktopWorkspace } from "@/lib/desktop";
 import { fromPersistedGraph } from "@/lib/graph";
 import { CanvasEditor } from "./canvas-editor";
 
@@ -16,7 +17,12 @@ type LoadState =
   | { status: "ready"; project: Project; graph: ProjectGraph };
 
 export function CanvasPage({ projectId }: { projectId: number }) {
+  const workspace = useDesktopWorkspace();
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const nameWrites = useRef(new Set<Promise<void>>());
+  const waitForName = useCallback(async () => {
+    while (nameWrites.current.size) await Promise.allSettled(nameWrites.current);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,15 +55,32 @@ export function CanvasPage({ projectId }: { projectId: number }) {
     };
   }, [projectId]);
 
+  // 标签页标题跟着当前项目走，改名后立刻同步（rename 会换掉 state.project）。
+  // 项目名是运行时数据，静态导出的 metadata 里拿不到，只能在客户端写 document.title；
+  // 加载中 / 加载失败时保持 page.tsx 里那份静态标题不动。
+  // 桌面端的窗口标题也跟着这里变。
+  const projectName = state.status === "ready" ? state.project.name : null;
+  const titleActive = !workspace || workspace.activeId === projectId;
+  useEffect(() => {
+    if (projectName === null || !titleActive) return;
+    document.title = `画布 · ${projectName}`;
+  }, [projectName, titleActive]);
+
   const handleRename = useCallback(
-    async (name: string) => {
-      const res = await api.api.projects[":id"].$patch({
-        param: { id: String(projectId) },
-        json: { name },
+    (name: string) => {
+      const write = (async () => {
+        const res = await api.api.projects[":id"].$patch({
+          param: { id: String(projectId) },
+          json: { name },
+        });
+        if (!res.ok) throw new Error("重命名失败");
+        const updated = await res.json();
+        setState((prev) => (prev.status === "ready" ? { ...prev, project: updated } : prev));
+      })();
+      nameWrites.current.add(write);
+      return write.finally(() => {
+        nameWrites.current.delete(write);
       });
-      if (!res.ok) throw new Error("重命名失败");
-      const updated = await res.json();
-      setState((prev) => (prev.status === "ready" ? { ...prev, project: updated } : prev));
     },
     [projectId],
   );
@@ -76,7 +99,16 @@ export function CanvasPage({ projectId }: { projectId: number }) {
       <div className="flex h-dvh flex-col items-center justify-center gap-4">
         <p className="text-muted-foreground">{state.message}</p>
         <Button asChild variant="outline">
-          <Link href="/">返回项目列表</Link>
+          <Link
+            href="/"
+            onClick={(event) => {
+              if (!workspace) return;
+              event.preventDefault();
+              workspace.activate(null);
+            }}
+          >
+            返回项目列表
+          </Link>
         </Button>
       </div>
     );
@@ -94,6 +126,7 @@ export function CanvasPage({ projectId }: { projectId: number }) {
         initialViewport={state.graph.viewport}
         initialGraph={state.graph}
         onRename={handleRename}
+        waitForMetadata={waitForName}
       />
     </ReactFlowProvider>
   );
